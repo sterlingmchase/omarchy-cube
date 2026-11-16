@@ -19,7 +19,7 @@ destination="$config/omarchy/plugins/local.cube"
 [[ -f "$module" && -f "$HOME/.local/lib/hypr/omarchy-cube.so" ]] || {
   echo 'Install the native Omarchy Cube plugin first.' >&2; exit 1;
 }
-omarchy plugin validate "$root/shell"
+omarchy plugin validate "$root"
 status=$(hyprctl omarchy-cube:status)
 [[ "$status" == active=* ]] || { echo 'Native Omarchy Cube is not loaded.' >&2; exit 1; }
 errors=$(hyprctl configerrors)
@@ -54,8 +54,16 @@ if [[ -d "$destination" ]]; then
   cp -a -- "$destination" "$config/omarchy/plugin-backups/local.cube-$stamp"
 fi
 mkdir -p "$destination/i18n"
-install -m644 "$root"/shell/{manifest.json,Cube.qml,PlainText.qml,ValueRow.qml,control.py,SettingsBridge.lua} "$destination/"
+install -m644 "$root"/shell/{Cube.qml,PlainText.qml,ValueRow.qml,control.py,SettingsBridge.lua} "$destination/"
 install -m644 "$root/shell/i18n/en.json" "$destination/i18n/"
+python3 - "$root/manifest.json" "$destination/manifest.json" <<'PYMANIFEST'
+import json, sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+manifest["id"] = "local.cube"
+manifest["entryPoints"]["barWidget"] = "Cube.qml"
+Path(sys.argv[2]).write_text(json.dumps(manifest, indent=2) + "\n")
+PYMANIFEST
 omarchy plugin validate "$destination"
 if [[ -f "$config/omarchy/shell.json" ]]; then
   cp -p -- "$config/omarchy/shell.json" "$config/omarchy/shell.json.cube-backup-$stamp"

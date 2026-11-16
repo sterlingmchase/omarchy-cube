@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline installer checks with a disposable home and mocked desktop commands."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -30,8 +31,12 @@ class InstallGuiTests(unittest.TestCase):
                         CUBE_TEST_LOG=str(self.log), CUBE_TEST_RELOADED=str(root / "reloaded"),
                         CUBE_TEST_FAIL="0")
         mocks = {
-            "omarchy": '[[ "$*" == "plugin validate "* ]]',
-            "omarchy-shell": '[[ "$*" == "shell ping" ]]',
+            "omarchy": '''case "$*" in
+  "plugin validate "*|"plugin enable local.cube") ;;
+  "plugin list --json") echo '[{"id":"local.cube"}]' ;;
+  *) exit 1 ;;
+esac''',
+            "omarchy-shell": '[[ "$*" == "shell ping" || "$*" == "shell rescanPlugins" ]]',
             "hyprctl": '''case "$*" in
   omarchy-cube:status) echo 'active=false' ;;
   reload) touch "$CUBE_TEST_RELOADED" ;;
@@ -63,6 +68,16 @@ esac''',
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(self.module.read_text(), self.original + (ROOT / "shell/SettingsBridge.lua").read_text())
             self.assert_no_widget_install()
+
+    def test_development_install_generates_local_manifest(self):
+        result = subprocess.run(["bash", str(ROOT / "tools/install-gui")],
+                                env=self.env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((self.destination / "manifest.json").read_text())
+        self.assertEqual(manifest["id"], "local.cube")
+        self.assertTrue((self.destination / manifest["entryPoints"]["barWidget"]).is_file())
+        self.assertIn("omarchy plugin enable local.cube", self.log.read_text())
+        self.assertFalse((ROOT / "shell/manifest.json").exists())
 
     def test_reload_validation_failure_restores_module(self):
         self.env["CUBE_TEST_FAIL"] = "1"
