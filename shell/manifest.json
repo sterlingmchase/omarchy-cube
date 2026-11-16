@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "local.cube",
+  "name": "Omarchy Cube",
+  "version": "0.2.0",
+  "author": "Omarchy Cube contributors",
+  "license": "BSD-3-Clause",
+  "description": "Workspace cube controls, read on demand.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Cube.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Cube",
+    "description": "Tune rotation, zoom, workspace count and skydome.",
+    "category": "Appearance",
+    "aliases": [
+      "cube",
+      "workspaces"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

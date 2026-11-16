@@ -1,0 +1,10 @@
+[repository]
+name = "omarchy-cube"
+authors = ["Omarchy Cube contributors"]
+
+[omarchy-cube]
+description = "4–20 workspace desktop cube for Omarchy / Hyprland 0.56.2"
+authors = ["Omarchy Cube contributors"]
+output = "build/omarchy-cube.so"
+build = ["make all"]
+since_hyprland = 7661

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Run manually after installing the native plugin. Placement args go to Omarchy.
+set -euo pipefail
+bridge_only=false
+if [[ ${1:-} == --bridge-only ]]; then
+  bridge_only=true
+  shift
+  [[ $# == 0 ]] || { echo 'Usage: tools/install-gui --bridge-only' >&2; exit 2; }
+fi
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+config=${XDG_CONFIG_HOME:-$HOME/.config}
+for command in omarchy-shell omarchy hyprctl python3 rg; do
+  command -v "$command" >/dev/null || { echo "Required command missing: $command" >&2; exit 1; }
+done
+# A present CLI cannot install into a shell that is not running.
+omarchy-shell shell ping >/dev/null
+module="$config/hypr/cube.lua"
+destination="$config/omarchy/plugins/local.cube"
+[[ -f "$module" && -f "$HOME/.local/lib/hypr/omarchy-cube.so" ]] || {
+  echo 'Install the native Omarchy Cube plugin first.' >&2; exit 1;
+}
+omarchy plugin validate "$root/shell"
+status=$(hyprctl omarchy-cube:status)
+[[ "$status" == active=* ]] || { echo 'Native Omarchy Cube is not loaded.' >&2; exit 1; }
+errors=$(hyprctl configerrors)
+[[ -z "${errors//[[:space:]]/}" ]] || { printf '%s\n' "$errors" >&2; exit 1; }
+stamp=$(date +%Y%m%d-%H%M%S)-$$
+backup="$module.gui-backup-$stamp"
+cp -p -- "$module" "$backup"
+# Any reload or validation failure restores the original Lua module.
+restore() {
+  cp -p -- "$backup" "$module"
+  hyprctl reload >&2 || true
+  hyprctl configerrors >&2 || true
+  echo "Restored cube.lua from $backup" >&2
+}
+trap restore ERR
+if ! rg -q '^-- Omarchy Cube GUI bridge v1$' "$module"; then
+  cat "$root/shell/SettingsBridge.lua" >> "$module"
+fi
+hyprctl reload
+errors=$(hyprctl configerrors)
+if [[ -n "${errors//[[:space:]]/}" ]]; then
+  printf '%s\n' "$errors" >&2
+  false
+fi
+trap - ERR
+if [[ $bridge_only == true ]]; then
+  printf 'GUI settings bridge installed. Enable the marketplace widget when ready.\n'
+  exit 0
+fi
+if [[ -d "$destination" ]]; then
+  mkdir -p "$config/omarchy/plugin-backups"
+  cp -a -- "$destination" "$config/omarchy/plugin-backups/local.cube-$stamp"
+fi
+mkdir -p "$destination/i18n"
+install -m644 "$root"/shell/{manifest.json,Cube.qml,PlainText.qml,ValueRow.qml,control.py,SettingsBridge.lua} "$destination/"
+install -m644 "$root/shell/i18n/en.json" "$destination/i18n/"
+omarchy plugin validate "$destination"
+if [[ -f "$config/omarchy/shell.json" ]]; then
+  cp -p -- "$config/omarchy/shell.json" "$config/omarchy/shell.json.cube-backup-$stamp"
+fi
+omarchy-shell shell rescanPlugins
+found=false
+for attempt in {1..30}; do
+  if omarchy plugin list --json | python3 -c 'import json,sys; sys.exit(not any(p["id"] == "local.cube" for p in json.load(sys.stdin)))'; then
+    found=true
+    break
+  fi
+  sleep 0.1
+done
+[[ "$found" == true ]] || { echo 'Shell did not discover local.cube; try omarchy-shell shell rescanPlugins.' >&2; exit 1; }
+omarchy plugin enable local.cube "$@"
+printf 'Omarchy Cube controls installed. Click the cube icon in your bar.\n'
