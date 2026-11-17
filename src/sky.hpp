@@ -3,23 +3,12 @@
 #include <bit>
 #include <turbojpeg.h>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
+#include "sky-file.hpp"
 #include <hyprland/src/render/Renderer.hpp>
 #include <stdexcept>
 
 inline SP<Render::ITexture> loadSky(const std::string &path) {
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path, error))
-        throw std::runtime_error("Skydome must be a regular PNG or JPEG file");
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    const auto size = input.tellg();
-    if (!input || size < 24 || size > 32 * 1024 * 1024)
-        throw std::runtime_error("Skydome must be a readable PNG or JPEG smaller than 32 MiB");
-    std::vector<unsigned char> bytes(static_cast<size_t>(size));
-    input.seekg(0);
-    if (!input.read(reinterpret_cast<char *>(bytes.data()), size))
-        throw std::runtime_error("Cannot read skydome");
+    const auto bytes = readSkyFile(path);
     if (bytes[0] == 0xff && bytes[1] == 0xd8) {
         auto decoder = tj3Init(TJINIT_DECOMPRESS);
         if (!decoder)

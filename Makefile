@@ -7,13 +7,16 @@ LDLIBS += $(shell pkg-config --libs pixman-1 libdrm cairo libturbojpeg pangocair
 all: build/omarchy-cube.so
 build:
 	mkdir -p $@
-build/omarchy-cube.so: src/plugin.cpp src/cube.hpp src/sky.hpp src/label.hpp | build
+build/omarchy-cube.so: src/plugin.cpp src/cube.hpp src/sky.hpp src/sky-file.hpp src/label.hpp | build
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -shared $< $(LDLIBS) -o $@.new
 	mv $@.new $@
 build/test: tests/cube.cpp src/cube.hpp | build
 	$(CXX) -std=c++23 -Wall -Wextra -fsanitize=address,undefined -g $< -o $@
-test: build/test
+build/test-sky-file: tests/sky-file.cpp src/sky-file.hpp | build
+	$(CXX) -std=c++23 -Wall -Wextra -Werror -fsanitize=address,undefined -g $< -Wl,--wrap=open -Wl,--wrap=fstat -o $@
+test: build/test build/test-sky-file
 	./build/test
+	./build/test-sky-file
 clean:
 	rm -rf build
 PREFIX ?= $(HOME)/.local
