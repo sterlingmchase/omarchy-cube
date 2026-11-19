@@ -176,7 +176,7 @@ for (const path of ["https://invalid/sky.png", "relative.png", "file:///tmp/sky.
             with self.subTest(previous=previous), tempfile.TemporaryDirectory() as directory:
                 config = Path(directory)
                 target = config / "cube-gui.lua"
-                (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v1\n")
+                (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v2\n")
                 if previous is not None:
                     target.write_text(previous)
                 responses = iter(("", "ok", "injected config error", "ok", ""))
@@ -191,7 +191,7 @@ for (const path of ["https://invalid/sky.png", "relative.png", "file:///tmp/sky.
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory)
             target = config / "cube-gui.lua"
-            (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v1\n")
+            (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v2\n")
             with patch.object(control, "CONFIG", config), patch.object(control, "TARGET", target), \
                  patch.object(control, "live", side_effect=[control.DEFAULTS.copy(),
                      RuntimeError("Skydome image error: bad PNG"), control.DEFAULTS.copy()]), \
@@ -204,7 +204,7 @@ for (const path of ["https://invalid/sky.png", "relative.png", "file:///tmp/sky.
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory)
             target = config / "cube-gui.lua"
-            (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v1\n")
+            (config / "cube.lua").write_text("-- Omarchy Cube GUI bridge v2\n")
             with patch.object(control, "CONFIG", config), patch.object(control, "TARGET", target), \
                  patch.object(control, "live", return_value=control.DEFAULTS.copy()), \
                  patch.object(control, "ctl", side_effect=lambda *args: ""), \

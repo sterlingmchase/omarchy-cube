@@ -193,7 +193,7 @@ def apply(values):
     if errors:
         raise RuntimeError("Fix existing Hyprland configuration errors before applying: " + errors)
     module = CONFIG / "cube.lua"
-    if not module.exists() or "-- Omarchy Cube GUI bridge v1" not in module.read_text():
+    if not module.exists() or "-- Omarchy Cube GUI bridge v2" not in module.read_text():
         raise RuntimeError("GUI configuration bridge missing. Run tools/install-gui first.")
     CONFIG.mkdir(parents=True, exist_ok=True)
     with (CONFIG / ".cube-gui.lock").open("w") as lock:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline installer checks with a disposable home and mocked desktop commands."""
 import os
+import sys
 import json
 from pathlib import Path
 import subprocess
@@ -61,6 +62,36 @@ esac''',
         calls = self.log.read_text().splitlines()
         self.assertNotIn("omarchy-shell shell rescanPlugins", calls)
         self.assertTrue(all(not call.startswith("omarchy plugin enable") for call in calls))
+
+    def test_refuses_unrecognized_settings_before_reload(self):
+        target = self.module.with_name("cube-gui.lua")
+        payload = '-- Omarchy Cube GUI settings v1\nreturn {\n  enabled = (function() error("executed") end)(),\n}\n'
+        target.write_text(payload)
+        result = self.install()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Refusing unrecognized settings", result.stderr)
+        self.assertEqual(target.read_text(), payload)
+        self.assertEqual(self.module.read_text(), self.original)
+        self.assertNotIn("hyprctl reload", self.log.read_text())
+
+    def test_accepts_generated_settings(self):
+        sys.path.insert(0, str(ROOT / "shell"))
+        self.addCleanup(sys.path.remove, str(ROOT / "shell"))
+        import control
+        target = self.module.with_name("cube-gui.lua")
+        data = control.encode(dict(control.DEFAULTS, workspace_name_1="Café"))
+        target.write_text(data)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(target.read_text(), data)
+
+    def test_upgrades_legacy_bridge_in_place(self):
+        installer = (ROOT / "tools/install-gui").read_text()
+        legacy = installer.split('legacy = """', 1)[1].split('"""', 1)[0]
+        self.module.write_text(self.original + "\n" + legacy)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.module.read_text(), self.original + (ROOT / "shell/SettingsBridge.lua").read_text())
 
     def test_bridge_only_is_idempotent(self):
         for _ in range(2):

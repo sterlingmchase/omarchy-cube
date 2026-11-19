@@ -14,7 +14,7 @@ Omarchy's shell.
 
 Requires matching Hyprland headers, C++23, pkg-config, pixman, libdrm, Cairo, pangocairo, Lua
 headers, GLESv2 and libjpeg-turbo (used for native JPEG decoding). The shell controls additionally require Omarchy Quattro, Quickshell, Python 3,
-ripgrep and Zenity (for the image chooser). Tests use Pillow, Foot, Grim and wtype.
+Lua CLI (for setup validation) and Zenity (for the image chooser). Tests use Pillow, Foot, Grim and wtype.
 
 ```sh
 make -j2
@@ -59,7 +59,9 @@ values require adjusting the Lua module and GUI setup script.
    otherwise merge it into your existing module after making a backup.
 3. From that checkout, run `tools/install-gui --bridge-only`. This explicitly
    backs up and updates `cube.lua` so Apply can persist settings; it does not
-   install a second widget. The script rolls back the module if reload fails.
+   install a second widget. The script rejects unrelated settings files before
+   editing the module and rolls back the module if reload fails. Upgrade the
+   native library before rerunning setup to replace the old bridge.
 4. Run `omarchy plugin enable omarchycube.controls`.
 
 An existing development installation may use the `local.cube` widget. Disable it

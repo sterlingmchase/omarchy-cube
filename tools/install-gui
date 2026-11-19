@@ -9,7 +9,7 @@ if [[ ${1:-} == --bridge-only ]]; then
 fi
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 config=${XDG_CONFIG_HOME:-$HOME/.config}
-for command in omarchy-shell omarchy hyprctl python3 rg; do
+for command in omarchy-shell omarchy hyprctl python3 lua; do
   command -v "$command" >/dev/null || { echo "Required command missing: $command" >&2; exit 1; }
 done
 # A present CLI cannot install into a shell that is not running.
@@ -24,6 +24,67 @@ status=$(hyprctl omarchy-cube:status)
 [[ "$status" == active=* ]] || { echo 'Native Omarchy Cube is not loaded.' >&2; exit 1; }
 errors=$(hyprctl configerrors)
 [[ -z "${errors//[[:space:]]/}" ]] || { printf '%s\n' "$errors" >&2; exit 1; }
+prepared=$(mktemp "${module}.new.XXXXXX")
+trap 'rm -f -- "$prepared"' EXIT
+cp -p -- "$module" "$prepared"
+python3 - "$module" "$root/shell/SettingsBridge.lua" "$prepared" <<'PYPREPARE'
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+module, bridge, prepared = map(Path, sys.argv[1:])
+target = module.with_name("cube-gui.lua")
+try:
+    fd = os.open(target, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+except FileNotFoundError:
+    pass
+except OSError as error:
+    sys.exit(f"Refusing occupied settings path {target}: {error}")
+else:
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            sys.exit(f"Refusing non-regular settings path {target}")
+        data = stream.read(32769)
+    if not 0 < len(data) <= 32768:
+        sys.exit(f"Refusing invalid settings size at {target}")
+    stub = (
+        'local data = io.read("*a"); hl = {get_loaded_plugins=function() '
+        'return {{name="Omarchy Cube"}} end, config=function() end, '
+        'plugin={cube={read_settings=function() return data end}}}; dofile(arg[1]); os.exit(0)'
+    )
+    result = subprocess.run(["lua", "-E", "-e", stub, "--", "-",
+                             str(bridge)], input=data, capture_output=True, timeout=5)
+    if result.returncode:
+        sys.exit(f"Refusing unrecognized settings at {target}")
+
+current = module.read_text()
+replacement = bridge.read_text().lstrip("\n")
+legacy = """-- Omarchy Cube GUI bridge v1
+-- Load GUI overrides only after the native plugin has registered its options.
+for _, plugin in ipairs(hl.get_loaded_plugins()) do
+  if plugin.name == "Omarchy Cube" then
+    local directory = (os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")) .. "/hypr/"
+    local file = io.open(directory .. "cube-gui.lua", "r")
+    if file then
+      file:close()
+      hl.config({ plugin = { cube = dofile(directory .. "cube-gui.lua") } })
+    end
+    break
+  end
+end
+"""
+for known in (legacy, replacement):
+    if current.count(known) == 1 and current.count("-- Omarchy Cube GUI bridge v") == 1:
+        current = current.replace(known, replacement, 1)
+        break
+else:
+    if "-- Omarchy Cube GUI bridge v" in current:
+        sys.exit("Unrecognized cube.lua bridge. Back it up and remove the old bridge before reinstalling.")
+    current += replacement if current.endswith("\n\n") else "\n" + replacement
+prepared.write_text(current)
+PYPREPARE
 stamp=$(date +%Y%m%d-%H%M%S)-$$
 backup="$module.gui-backup-$stamp"
 cp -p -- "$module" "$backup"
@@ -35,9 +96,7 @@ restore() {
   echo "Restored cube.lua from $backup" >&2
 }
 trap restore ERR
-if ! rg -q '^-- Omarchy Cube GUI bridge v1$' "$module"; then
-  cat "$root/shell/SettingsBridge.lua" >> "$module"
-fi
+mv -f -- "$prepared" "$module"
 hyprctl reload
 errors=$(hyprctl configerrors)
 if [[ -n "${errors//[[:space:]]/}" ]]; then

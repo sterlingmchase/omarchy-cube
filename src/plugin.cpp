@@ -860,6 +860,23 @@ void installInput() {
         }
     });
 }
+int luaReadSettings(lua_State *L) {
+    const char *config = std::getenv("XDG_CONFIG_HOME");
+    const char *home = std::getenv("HOME");
+    if (!config && !home)
+        return luaL_error(L, "Cannot locate cube-gui.lua");
+    try {
+        const auto directory = config ? std::string(config) : std::string(home) + "/.config";
+        const auto bytes = readBoundedFile(directory + "/hypr/cube-gui.lua", 1, 32768, true);
+        if (bytes.empty())
+            lua_pushnil(L);
+        else
+            lua_pushlstring(L, reinterpret_cast<const char *>(bytes.data()), bytes.size());
+        return 1;
+    } catch (const std::exception &) {
+        return luaL_error(L, "Cannot safely read cube-gui.lua");
+    }
+}
 int luaRotate(lua_State *L) {
     const char *arg = luaL_checkstring(L, 1);
     const auto result = rotate(arg);
@@ -901,6 +918,7 @@ void cleanup() {
     }
     eventKeyboard.reset();
     HyprlandAPI::removeLuaFunction(handle, "cube", "rotate");
+    HyprlandAPI::removeLuaFunction(handle, "cube", "read_settings");
     if (status)
         HyprlandAPI::unregisterHyprCtlCommand(handle, status);
     status.reset();
@@ -1149,6 +1167,8 @@ void main() {
             throw std::runtime_error("Keyboard origin hook unavailable");
         if (!HyprlandAPI::addLuaFunction(handle, "cube", "rotate", luaRotate))
             throw std::runtime_error("Cube dispatcher unavailable");
+        if (!HyprlandAPI::addLuaFunction(handle, "cube", "read_settings", luaReadSettings))
+            throw std::runtime_error("Cube settings reader unavailable");
         // One deadline releases snapshots even when a hidden output stops receiving frames.
         expiry = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void *) { stop(); }, nullptr);
         g_pEventLoopManager->addTimer(expiry);
