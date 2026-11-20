@@ -158,7 +158,7 @@ if __name__ == "__main__":
         print("Setup interrupted.", file=sys.stderr)
         sys.exit(130)
     finally:
-        if not sys.argv[1:] and sys.stdin.isatty():
+        if not sys.argv[1:] and sys.stdin.isatty() and os.environ.get("CUBE_SETUP_NO_PAUSE") != "1":
             try:
                 input("\nPress Enter to close this terminal…")
             except (EOFError, KeyboardInterrupt):

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Fresh installs only. Native activation still requires explicit approval.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+id=omarchycube.controls
+url=https://github.com/sterlingmchase/omarchy-cube.git
+widget="$HOME/.config/omarchy/plugins/$id"
+if [[ ! -t 0 ]]; then
+  echo 'Run this installer in a terminal to approve native activation.' >&2
+  exit 1
+fi
+export CUBE_SETUP_NO_PAUSE=1
+python3 "$root/tools/setup" --check
+if [[ ! -e "$widget" && ! -L "$widget" ]]; then
+  omarchy plugin add "$url" --yes
+fi
+# Build from the checkout the user explicitly ran, never execute a freshly cloned script.
+if [[ -L "$widget" || ! -d "$widget/.git" || $(git -C "$widget" config --get remote.origin.url) != "$url" ||
+      $(git -C "$widget" rev-parse HEAD) != $(git -C "$root" rev-parse HEAD) ||
+      -n $(git -C "$widget" status --porcelain) ]]; then
+  echo "Widget checkout does not match this release. Review/update it before retrying." >&2
+  exit 1
+fi
+python3 "$root/tools/setup"
+status=$(hyprctl omarchy-cube:status)
+if [[ $status != active=* ]]; then
+  echo 'Native setup did not complete; the widget was not enabled.' >&2
+  exit 1
+fi
+omarchy plugin enable "$id"

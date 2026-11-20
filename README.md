@@ -69,6 +69,17 @@ output inside the nested session. Captures and timing samples go in `build/`.
 Close the nested compositor afterward. Use `--no-capture` for frame-pacing tests:
 screenshot readback can itself stall rendering.
 
+## One-command setup from a checkout
+
+On a fresh Omarchy install running the supported Hyprland build, review the
+release checkout, then run `./tools/install` from it in a terminal. It adds the
+matching marketplace widget, runs guided native setup, and enables the widget
+only after the native plugin responds. No config edits or separate build commands
+are needed. Native activation still requires confirmation, and missing system
+dependencies may prompt for sudo. This is not the marketplace's one-click flow.
+If the final widget enable fails after native setup succeeds, retry just
+`omarchy plugin enable omarchycube.controls`.
+
 ## Marketplace installation
 
 Install and enable the widget normally:
