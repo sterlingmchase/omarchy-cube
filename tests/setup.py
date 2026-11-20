@@ -3,6 +3,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import signal
 import os
 from pathlib import Path
 import tempfile
@@ -91,6 +92,28 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.main.read_bytes(), self.original)
         self.assertFalse((self.config / "cube.lua").exists())
         self.assertFalse((self.home / ".local/lib/hypr/omarchy-cube.so").exists())
+
+    def test_activation_signals_roll_back_and_restore_handlers(self):
+        run = setup.run.side_effect
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=sig):
+                previous = signal.getsignal(sig)
+
+                def interrupt(*args, **kwargs):
+                    if args == ('hyprctl', 'reload'):
+                        signal.raise_signal(sig)
+                    return run(*args, **kwargs)
+
+                setup.run.side_effect = interrupt
+                try:
+                    with self.assertRaises(KeyboardInterrupt):
+                        setup.main()
+                finally:
+                    setup.run.side_effect = run
+                self.assertEqual(signal.getsignal(sig), previous)
+                self.assertEqual(self.main.read_bytes(), self.original)
+                self.assertFalse((self.config / 'cube.lua').exists())
+                self.assertFalse((self.home / '.local/lib/hypr/omarchy-cube.so').exists())
 
     def test_unload_failure_keeps_library(self):
         self.bad_status = True

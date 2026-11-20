@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -81,13 +82,28 @@ def main():
     wrote_library = False
     wrote_module = False
     wrote_config = False
+    interrupted = None
+
+    def remember_interrupt(signum, _frame):
+        nonlocal interrupted
+        interrupted = signum
+
+    def check_interrupt():
+        if interrupted is not None:
+            raise KeyboardInterrupt
+
+    # Defer signals to checkpoints so ownership flags are set before rollback.
+    handlers = {sig: signal.signal(sig, remember_interrupt)
+                for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
+        check_interrupt()
         library.parent.mkdir(parents=True, exist_ok=True)
         # Exclusive creation avoids overwriting a concurrent installation.
         with library.open("xb") as output:
             wrote_library = True
             output.write((ROOT / "build/omarchy-cube.so").read_bytes())
         library.chmod(0o755)
+        check_interrupt()
         with module.open("x") as output:
             wrote_module = True
             output.write((ROOT / "examples/cube.lua").read_text())
@@ -96,17 +112,21 @@ def main():
         # is applied before load through the ordinary Lua module on reload.
         if main_config.read_bytes() != original:
             raise RuntimeError("Hyprland configuration changed before activation; refusing to overwrite it.")
+        check_interrupt()
         wrote_config = True
         main_config.write_bytes(original + b'\n-- Omarchy Cube\nrequire("hypr.cube")\n')
         loaded = True  # reload may partially succeed, so rollback must attempt unload
+        check_interrupt()
         run("hyprctl", "reload")
+        check_interrupt()
         errors = run("hyprctl", "configerrors", capture=True)
         if errors:
             raise RuntimeError(errors)
         status = run("hyprctl", "omarchy-cube:status", capture=True)
         if not status.startswith("active="):
             raise RuntimeError("Native Cube did not report a healthy status: " + status)
-    except Exception:
+        check_interrupt()
+    except (Exception, KeyboardInterrupt):
         if wrote_config:
             shutil.copy2(backup, main_config)
             subprocess.run(["hyprctl", "reload"], check=False)
@@ -121,6 +141,9 @@ def main():
         if wrote_module:
             module.unlink(missing_ok=True)
         raise
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
     print("\nCube is ready. Return to the widget and click Refresh.\n"
           "Super+Ctrl+Alt+Up opens the overview.\nBackup: " + str(backup))
 
@@ -131,6 +154,9 @@ if __name__ == "__main__":
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         print("Setup failed: " + str(error), file=sys.stderr)
         sys.exit(1)
+    except KeyboardInterrupt:
+        print("Setup interrupted.", file=sys.stderr)
+        sys.exit(130)
     finally:
         if not sys.argv[1:] and sys.stdin.isatty():
             try:

@@ -28,6 +28,12 @@ Panel {
     }
   }
   property var presetNames: []
+  property string presetDraft: ""
+  // Hidden panels must not retain editable controls or their clipboard hooks.
+  component OpenEditor: Loader {
+    width: parent.width
+    visible: active
+  }
   property var builtinPresets: []
   property string builtinSelection: ""
   property string presetAction: "list"
@@ -78,7 +84,7 @@ Panel {
     errorMessage = ""
     let command = ["python3", helper, "presets", action]
     if (action === "builtin") command.push(builtinId)
-    else if (action !== "list") command.push(presetName.text)
+    else if (action !== "list") command.push(root.presetDraft)
     if (action === "save") command.push(JSON.stringify(values))
     presetBridge.command = command
     presetBridge.running = true
@@ -317,13 +323,18 @@ Panel {
                 readonly property string setting: "workspace_name_" + (index + 1)
                 width: parent.width
                 PlainText { text: strings.t("workspaceName").arg(Commons.I18n.formatNumber(parent.index + 1)) }
-                TextField {
-                  width: parent.width
-                  text: root.values[parent.setting] || ""
-                  maximumLength: 160 // UTF-16 code units; the helper enforces 80 Unicode characters.
-                  placeholderText: strings.t("workspaceNamePlaceholder")
-                  Accessible.name: strings.t("workspaceName").arg(Commons.I18n.formatNumber(parent.index + 1))
-                  onTextEdited: root.change(parent.setting, text)
+                OpenEditor {
+                  id: nameEditor
+                  readonly property string setting: parent.setting
+                  readonly property int number: parent.index + 1
+                  active: root.opened && root.ready && root.settingsPage === "cube" && root.namesOpen
+                  sourceComponent: TextField {
+                    text: root.values[nameEditor.setting] || ""
+                    maximumLength: 160 // UTF-16 code units; the helper enforces 80 Unicode characters.
+                    placeholderText: strings.t("workspaceNamePlaceholder")
+                    Accessible.name: strings.t("workspaceName").arg(Commons.I18n.formatNumber(nameEditor.number))
+                    onTextEdited: root.change(nameEditor.setting, text)
+                  }
                 }
               }
             }
@@ -395,13 +406,15 @@ Panel {
             onEdited: function(number) { root.change("skydome_brightness", Number(number.toFixed(4))) }
           }
           PlainText { text: strings.t("image") }
-          TextField {
-            width: parent.width
-            text: root.values.skydome_path || ""
-            placeholderText: strings.t("imagePlaceholder")
-            maximumLength: 4096
-            Accessible.name: strings.t("image")
-            onTextEdited: root.change("skydome_path", text)
+          OpenEditor {
+            active: root.opened && root.ready && root.settingsPage === "background"
+            sourceComponent: TextField {
+              text: root.values.skydome_path || ""
+              placeholderText: strings.t("imagePlaceholder")
+              maximumLength: 4096
+              Accessible.name: strings.t("image")
+              onTextEdited: root.change("skydome_path", text)
+            }
           }
           PlainText { width: parent.width; text: strings.t("imageHelp"); wrapMode: Text.WordWrap }
           PlainText { width: parent.width; text: strings.t("parallaxHelp"); wrapMode: Text.WordWrap }
@@ -480,15 +493,18 @@ Panel {
               width: parent.width
               label: strings.t("savedPresets")
               options: root.presetNames
-              value: presetName.text
-              onChanged: function(value) { presetName.text = value }
+              value: root.presetDraft
+              onChanged: function(value) { root.presetDraft = value }
             }
-            TextField {
-              id: presetName
-              width: parent.width
-              maximumLength: 128
-              placeholderText: strings.t("presetName")
-              Accessible.name: strings.t("presetName")
+            OpenEditor {
+              active: root.opened && root.ready && root.settingsPage === "presets"
+              sourceComponent: TextField {
+                text: root.presetDraft
+                maximumLength: 128
+                placeholderText: strings.t("presetName")
+                Accessible.name: strings.t("presetName")
+                onTextEdited: root.presetDraft = text
+              }
             }
             Row {
               width: parent.width
@@ -500,7 +516,7 @@ Panel {
                   width: (parent.width - Style.space(12)) / 3
                   text: strings.t("preset_" + modelData)
                   bordered: true; focusable: true
-                  enabled: presetName.text.trim() !== "" && (modelData === "save" || root.presetNames.indexOf(presetName.text) >= 0)
+                  enabled: root.presetDraft.trim() !== "" && (modelData === "save" || root.presetNames.indexOf(root.presetDraft) >= 0)
                   onClicked: root.preset(modelData)
                 }
               }
