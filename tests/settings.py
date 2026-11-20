@@ -148,6 +148,22 @@ for (const path of ["https://invalid/sky.png", "relative.png", "file:///tmp/sky.
             with self.assertRaises(ValueError): control.navigate('overview"); os.execute("bad")')
             self.assertEqual(ctl.call_count, 1)
 
+    def test_curvature_bounds_and_legacy_presets(self):
+        for value in (-1, -.5, 0, .5, 1):
+            control.validate(dict(control.DEFAULTS, face_curvature=value))
+        for value in (-1.01, 1.01, True, float('nan'), float('inf'), '0'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                control.validate(dict(control.DEFAULTS, face_curvature=value))
+        with tempfile.TemporaryDirectory() as directory, patch.object(control, 'CONFIG', Path(directory)):
+            old = {k: control.DEFAULTS[k] for k in control.PRESET_KEYS - {'face_curvature'}}
+            path = Path(directory) / 'cube-presets.json'
+            path.write_text(json.dumps({'Legacy': old}))
+            loaded = control.presets('load', 'Legacy')['values']
+            self.assertNotIn('face_curvature', loaded)
+            self.assertEqual(dict(control.DEFAULTS, face_curvature=.5, **loaded)['face_curvature'], .5)
+            control.presets('save', 'Curved', dict(control.DEFAULTS, face_curvature=-.75))
+            self.assertEqual(control.presets('load', 'Curved')['values']['face_curvature'], -.75)
+
     def test_skydome_status_errors(self):
         values = dict(control.DEFAULTS, skydome_path="/tmp/sky.png")
         self.assertEqual(control.sky_problem(values, "active=false sky_loaded=true sky_error=none"), "")

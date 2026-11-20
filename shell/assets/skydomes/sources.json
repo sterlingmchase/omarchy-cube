@@ -1,0 +1,32 @@
+[
+  {
+    "id": "orbital",
+    "source_filename": "Sculpted Rings Over a Tranquil Nebula (2).png",
+    "sha256": "2744ad83c51812f6f884da313f4ab71b9bde5803532c968b95a9640cbc88de7a",
+    "width": 1774,
+    "height": 887,
+    "source": "User-provided ChatGPT image download",
+    "mapping": "backdrop",
+    "upscaled": false
+  },
+  {
+    "id": "deep-space",
+    "source_filename": "Carved Nebula Cathedral Panorama (2).png",
+    "sha256": "bc370bd23ef51392b98188cd0b6c93b1441abace58fb5cc5556c322d516e3bae",
+    "width": 1774,
+    "height": 887,
+    "source": "User-provided ChatGPT image download",
+    "mapping": "backdrop",
+    "upscaled": false
+  },
+  {
+    "id": "golden-hour",
+    "source_filename": "Carved Cloud Canyon at Sunset (2).png",
+    "sha256": "e963ad5ed38ce10b23130c8d8779fc28714ae0bf2f7e3500ae43b86403b26269",
+    "width": 1774,
+    "height": 887,
+    "source": "User-provided ChatGPT image download",
+    "mapping": "backdrop",
+    "upscaled": false
+  }
+]

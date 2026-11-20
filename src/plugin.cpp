@@ -42,7 +42,7 @@ struct Settings {
     SP<Config::Values::CBoolValue> enabled, skyEnabled, trackpad, carryWindows;
     SP<Config::Values::CBoolValue> labels, highlight, invertHorizontal, invertVertical, momentum;
     SP<Config::Values::CIntValue> duration, count;
-    SP<Config::Values::CFloatValue> zoom, brightness;
+    SP<Config::Values::CFloatValue> zoom, brightness, curvature;
     SP<Config::Values::CFloatValue> horizontalSensitivity, verticalSensitivity;
     SP<Config::Values::CStringValue> path;
     SP<Config::Values::CStringValue> skyMode;
@@ -51,12 +51,12 @@ struct Settings {
 SP<ITexture> sky;
 std::string loadedSkyPath, skyError;
 std::filesystem::file_time_type loadedSkyTime;
-GLint radiusUniform, skyAspect, skyYaw, skyBrightness, skyImage, skySampler, skySourceAspect;
+GLint radiusUniform, skyAspect, skyParallaxUniform, skyBrightness, skyImage, skySampler, skySourceAspect;
 double turnDuration = 280, turnZoom = .7, turnRadius = 1, turnStep = Cube::pi / 2;
 size_t lastFaceCount = 0;
 GLuint vao = 0, vbo = 0;
-GLint faceUniform, distanceUniform, angleUniform, shadeUniform, pitchUniform, interiorUniform;
-GLint labelUniform, showLabelUniform, labelSpanUniform, detailOpacityUniform, selectedUniform, accentUniform, skyModeUniform;
+GLint faceUniform, distanceUniform, angleUniform, shadeUniform, pitchUniform, interiorUniform, curveUniform;
+GLint labelUniform, showLabelUniform, labelSpanUniform, detailOpacityUniform, selectedUniform, accentUniform;
 double captureMs = 0, drawUsTotal = 0, drawUsMax = 0;
 double intervalTotal = 0, intervalMax = 0;
 uint64_t intervals = 0, lateFrames = 0;
@@ -105,6 +105,13 @@ double overviewPhase() {
         return 1;
     return Cube::progress(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - overviewStarted).count(),
                           overviewDuration);
+}
+double detailNow() {
+    return overview ? Cube::ease(overviewPhase()) : settling ? 1 - Cube::ease(phase()) : std::sin(Cube::pi * phase());
+}
+double curveNow() {
+    const double value = cfg.curvature->value();
+    return (std::isfinite(value) ? std::clamp(value, -1.0, 1.0) : 0.0) * detailNow();
 }
 double zoomNow() {
     if (overview)
@@ -198,7 +205,7 @@ void syncFaces() {
     const double rotation = angleNow(), distance = turnRadius + 2 + zoomNow();
     std::array<bool, 20> needed{};
     for (int i = 0; i < faceCount; ++i)
-        needed[i] = Cube::frontFacing((i - rotation) * turnStep, turnRadius, distance, pitchNow());
+        needed[i] = Cube::frontFacing((i - rotation) * turnStep, turnRadius, distance, pitchNow(), Cube::curveDepth(faceCount, curveNow()));
     std::erase_if(faces, [&](const auto &face) { return !needed[face.offset]; });
     for (int i = 0; i < faceCount; ++i) {
         if (!needed[i] || std::ranges::any_of(faces, [&](const auto &f) { return f.offset == i; }))
@@ -331,7 +338,7 @@ class CubePass : public IPassElement {
         previousFrame = drawStart;
         const double rotation = angleNow();
         // Save raw GL state because this pass shares the compositor's context.
-        GLint oldProgram, oldVao, oldBuffer, oldActive, oldTexture, oldLabelTexture;
+        GLint oldProgram, oldVao, oldBuffer, oldActive, oldTexture, oldLabelTexture, oldFrontFace;
         GLint oldScissor[4];
         glGetIntegerv(GL_SCISSOR_BOX, oldScissor);
         GLboolean colorMask[4];
@@ -345,12 +352,14 @@ class CubePass : public IPassElement {
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldLabelTexture);
         glActiveTexture(GL_TEXTURE0);
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldTexture);
-        const bool blend = glIsEnabled(GL_BLEND), scissor = glIsEnabled(GL_SCISSOR_TEST), depth = glIsEnabled(GL_DEPTH_TEST),
+        const bool blend = glIsEnabled(GL_BLEND), scissor = glIsEnabled(GL_SCISSOR_TEST), depthTest = glIsEnabled(GL_DEPTH_TEST),
                    cull = glIsEnabled(GL_CULL_FACE);
         glDisable(GL_BLEND);
         glDisable(GL_SCISSOR_TEST);
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
+        glGetIntegerv(GL_FRONT_FACE, &oldFrontFace);
+        glFrontFace(GL_CCW);
         GLfloat clear[4];
         glGetFloatv(GL_COLOR_CLEAR_VALUE, clear);
         glClearColor(.025f, .025f, .035f, 1);
@@ -362,16 +371,18 @@ class CubePass : public IPassElement {
             glUniform1i(skyImage, sky ? 1 : 0);
             glUniform1f(skyAspect, m->m_pixelSize.x / m->m_pixelSize.y);
             glUniform1f(skySourceAspect, sky ? sky->m_size.x / sky->m_size.y : 2.f);
-            const auto mode = cfg.skyMode->value();
-            glUniform1i(skyModeUniform, mode == "photo" ? 1 : mode == "panorama" ? 2 : 0);
-            glUniform1f(skyYaw, -rotation * turnStep * .15);
+            static auto animations = CConfigValue<Config::BOOL>("animations:enabled");
+            const auto parallax = Cube::backdropParallax(rotation * turnStep, pitchNow(), *animations);
+            glUniform2f(skyParallaxUniform, parallax[0], parallax[1]);
             glUniform1f(skyBrightness,
                         (std::isfinite(cfg.brightness->value()) ? std::clamp(cfg.brightness->value(), .1f, 1.f) : .65f));
             if (sky)
                 sky->bind();
             std::array<double, 4> covered{};
             double coveredArea = 0;
+            // Flat-face occlusion bounds are not conservative for bent surfaces.
             for (const auto &face : faces) {
+                if (curveNow() != 0) break;
                 const auto rect = Cube::coveredRect(faceCount, rotation, turnRadius + 2 + zoomNow(), pitchNow(), face.offset);
                 const double area = std::max(0., rect[2]-rect[0]) * std::max(0., rect[3]-rect[1]);
                 if (area > coveredArea) { coveredArea = area; covered = rect; }
@@ -396,7 +407,13 @@ class CubePass : public IPassElement {
         glUniform1i(faceUniform, 0);
         glUniform1i(labelUniform, 1);
         glUniform2f(labelSpanUniform, .5f, .5f * m->m_pixelSize.x / m->m_pixelSize.y * 80.f / 768.f);
-        const double detail = overview ? Cube::ease(overviewPhase()) : settling ? 1 - Cube::ease(phase()) : std::sin(Cube::pi * phase());
+        const double detail = detailNow();
+        const double depth = Cube::curveDepth(faceCount, curveNow());
+        glUniform1f(curveUniform, depth);
+        const auto drawFace = [depth] {
+            if (depth == 0) glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            else glDrawArrays(GL_TRIANGLES, 4, Cube::curveSegments * 6);
+        };
         glUniform1f(detailOpacityUniform, detail);
         static auto border = CConfigValue<Config::IComplexConfigValue>("general:col.active_border");
         const auto gradient = border.good() ? dynamic_cast<Config::CGradientValueData *>(border.ptr()) : nullptr;
@@ -407,7 +424,7 @@ class CubePass : public IPassElement {
         glUniform1f(radiusUniform, turnRadius);
         const double pitch = pitchNow();
         glUniform1f(pitchUniform, pitch);
-        if (std::abs(pitch) > .001) {
+        if (std::abs(pitch) > .001 || depth != 0) {
             // Shade the inside without capturing workspaces that face away from the camera.
             std::array<int, 20> order{};
             for (int i = 0; i < faceCount; ++i) order[i] = i;
@@ -417,16 +434,16 @@ class CubePass : public IPassElement {
             glUniform1i(interiorUniform, 1);
             for (int n = 0; n < faceCount; ++n) {
                 const double angle = (order[n] - rotation) * turnStep;
-                if (Cube::frontFacing(angle, turnRadius, distance, pitch)) continue;
+                if (depth == 0 && Cube::frontFacing(angle, turnRadius, distance, pitch)) continue;
                 glUniform1f(angleUniform, angle);
                 glUniform1f(shadeUniform, .65f + .35f * std::abs(std::cos(angle)));
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                drawFace();
             }
         }
         glUniform1i(interiorUniform, 0);
         for (const auto &face : faces) {
             const float angle = (face.offset - rotation) * turnStep;
-            if (!Cube::frontFacing(angle, turnRadius, distance, pitch))
+            if (!Cube::frontFacing(angle, turnRadius, distance, pitch, depth))
                 continue;
             glUniform1f(angleUniform, angle);
             glUniform1f(shadeUniform, .65f + .35f * std::cos(angle));
@@ -441,7 +458,7 @@ class CubePass : public IPassElement {
                 glActiveTexture(GL_TEXTURE0);
             }
             face.fb->getTexture()->bind();
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            drawFace();
         }
         glBindTexture(GL_TEXTURE_2D, oldTexture);
         glActiveTexture(GL_TEXTURE1);
@@ -450,12 +467,13 @@ class CubePass : public IPassElement {
         glBindVertexArray(oldVao);
         glBindBuffer(GL_ARRAY_BUFFER, oldBuffer);
         glUseProgram(oldProgram);
+        glFrontFace(oldFrontFace);
         if (blend)
             glEnable(GL_BLEND);
         glScissor(oldScissor[0], oldScissor[1], oldScissor[2], oldScissor[3]);
         if (scissor)
             glEnable(GL_SCISSOR_TEST);
-        if (depth)
+        if (depthTest)
             glEnable(GL_DEPTH_TEST);
         if (cull)
             glEnable(GL_CULL_FACE);
@@ -614,7 +632,7 @@ void beginCarry() {
         return;
     const auto pos = Pointer::mgr()->position() - m->m_position;
     const auto hit = Cube::hitFacePoint(faceCount, angleNow(), turnRadius + 2 + zoomNow(),
-        2 * pos.x / m->m_size.x - 1, 2 * pos.y / m->m_size.y - 1, pitchNow());
+        2 * pos.x / m->m_size.x - 1, 2 * pos.y / m->m_size.y - 1, pitchNow(), curveNow());
     if (!hit)
         return;
     const Vector2D point = m->m_position + Vector2D{hit->u * m->m_size.x, hit->v * m->m_size.y};
@@ -815,7 +833,7 @@ void installInput() {
             }
             const auto pos = Pointer::mgr()->position() - m->m_position;
             const auto face = Cube::hitFace(faceCount, angleNow(), turnRadius + 2 + zoomNow(), 2 * pos.x / m->m_size.x - 1,
-                                            2 * pos.y / m->m_size.y - 1, pitchNow());
+                                            2 * pos.y / m->m_size.y - 1, pitchNow(), curveNow());
             if (face)
                 accept(Cube::next(baseWorkspace, *face, faceCount));
         }
@@ -954,7 +972,7 @@ void configure() {
         cfg.names[i] = option<CStringValue>(nameKeys[i].c_str(), "Cube workspace display name", "");
     cfg.skyEnabled = option<CBoolValue>("plugin:cube:skydome_enabled", "Show skydome", true);
     cfg.labels = option<CBoolValue>("plugin:cube:show_labels", "Show workspace numbers and names", true);
-    cfg.highlight = option<CBoolValue>("plugin:cube:highlight_selected", "Outline selected workspace", true);
+    cfg.highlight = option<CBoolValue>("plugin:cube:highlight_selected", "Theme-colored selected workspace edge glow", true);
     cfg.invertHorizontal = option<CBoolValue>("plugin:cube:invert_horizontal", "Invert horizontal drag", false);
     cfg.invertVertical = option<CBoolValue>("plugin:cube:invert_vertical", "Invert vertical drag", false);
     cfg.momentum = option<CBoolValue>("plugin:cube:momentum", "Allow flicks to carry up to one extra face", false);
@@ -962,10 +980,12 @@ void configure() {
                                                    SFloatValueOptions{.min = .25, .max = 3});
     cfg.verticalSensitivity = option<CFloatValue>("plugin:cube:vertical_sensitivity", "Vertical drag sensitivity", 1.f,
                                                  SFloatValueOptions{.min = .25, .max = 3});
-    cfg.skyMode = option<CStringValue>("plugin:cube:skydome_mode", "auto, photo, or panorama", "auto");
+    cfg.skyMode = option<CStringValue>("plugin:cube:skydome_mode", "Legacy mapping setting (all values now use a parallax backdrop)", "photo");
     cfg.duration = option<CIntValue>("plugin:cube:duration_ms", "Turn duration", 280, SIntValueOptions{.min = 120, .max = 600});
     cfg.count =
         option<CIntValue>("plugin:cube:workspace_count", "Numbered workspace faces", 10, SIntValueOptions{.min = 4, .max = 20});
+    cfg.curvature = option<CFloatValue>("plugin:cube:face_curvature", "Face bow: -1 concave, 0 flat, +1 convex (experimental)", 0.f,
+                                        SFloatValueOptions{.min = -1, .max = 1});
     cfg.zoom = option<CFloatValue>("plugin:cube:zoom", "Zoom out distance", .7f, SFloatValueOptions{.min = 0, .max = 1.5});
     cfg.brightness = option<CFloatValue>("plugin:cube:skydome_brightness", "Skydome brightness", .65f,
                                          SFloatValueOptions{.min = .1, .max = 1});
@@ -1020,9 +1040,11 @@ uniform float angle;
 uniform float distance;
 uniform float radius;
 uniform float pitch;
+uniform float curve_depth;
 void main() {
-    float x = pos.x*cos(angle) + radius*sin(angle);
-    float z = -pos.x*sin(angle) + radius*cos(angle);
+    float wall = radius + curve_depth*(1.0-pos.x*pos.x);
+    float x = pos.x*cos(angle) + wall*sin(angle);
+    float z = -pos.x*sin(angle) + wall*cos(angle);
     float y = pos.y*cos(pitch)-z*sin(pitch);
     z = pos.y*sin(pitch)+z*cos(pitch);
     gl_Position = vec4(2.0*x, 2.0*y, 0.0, distance-z);
@@ -1041,8 +1063,12 @@ uniform vec2 label_span;
 uniform float detail_opacity;
 uniform bool selected_face;
 uniform vec3 accent;
+uniform float curve_depth;
 out vec4 color;
 void main() {
+    // The inverse side of each bent strip belongs to the interior pass.
+    // Hit testing intersects these same piecewise-linear strips.
+    if (curve_depth != 0.0 && gl_FrontFacing == interior) discard;
     if (interior) {
         float rim = step(0.982,abs(uv.y*2.0-1.0));
         color = vec4(mix(vec3(0.055,0.07,0.10)*shade,vec3(0.22,0.29,0.40),rim),1.0);
@@ -1055,8 +1081,13 @@ void main() {
         }
         if (selected_face) {
             vec2 edge=min(uv,1.0-uv)/max(fwidth(uv),vec2(0.00001));
-            float line=1.0-smoothstep(1.0,2.5,min(edge.x,edge.y));
-            rgb=mix(rgb,accent,line*detail_opacity);
+            float pixels=min(edge.x,edge.y);
+            float line=1.0-smoothstep(1.0,2.5,pixels);
+            // Soft inward halo in the existing face pass: no blur, extra texture,
+            // geometry, or idle animation. Keep the workspace center untouched.
+            float glow=(1.0-smoothstep(2.5,18.0,pixels));
+            glow=glow*glow*.38;
+            rgb=mix(rgb,accent,max(line,glow)*detail_opacity);
         }
         color=vec4(rgb,1.0);
     }
@@ -1076,24 +1107,16 @@ uniform sampler2D panorama;
 uniform bool has_image;
 uniform float aspect;
 uniform float source_aspect;
-uniform int mapping_mode;
-uniform float yaw;
+uniform vec2 parallax;
 uniform float brightness;
 out vec4 color;
 void main() {
     vec3 skyColor;
     if (has_image) {
-        vec2 sampleUV;
-        if (mapping_mode == 1 || (mapping_mode == 0 && abs(source_aspect-2.0)>0.1)) {
-            // Fit normal photos without stretching a small crop around a sphere.
-            vec2 span=vec2(min(1.0,aspect/source_aspect),min(1.0,source_aspect/aspect))/1.04;
-            sampleUV=vec2(0.5)+(uv-0.5)*span;
-            sampleUV.x+=sin(yaw)*(1.0-span.x)*0.5;
-        }
-        else {
-            vec3 ray=normalize(vec3((uv.x*2.0-1.0)*aspect, uv.y*2.0-1.0, 1.5));
-            sampleUV=vec2(fract(atan(ray.x,ray.z)/6.2831853+0.5+yaw/6.2831853),acos(ray.y)/3.14159265);
-        }
+        // Aspect-correct cover with 10% overscan. Offsets consume only 65% of
+        // the available margin, including at maximum tilt or extreme aspect ratios.
+        vec2 span=vec2(min(1.0,aspect/source_aspect),min(1.0,source_aspect/aspect))/1.10;
+        vec2 sampleUV=vec2(0.5)+(uv-0.5)*span+parallax*(1.0-span)*0.5;
         skyColor=texture(panorama,sampleUV).rgb;
     }
     else {
@@ -1106,8 +1129,7 @@ void main() {
             throw std::runtime_error("Skydome shader compilation failed");
         skyAspect = glGetUniformLocation(skyShader.program(), "aspect");
         skySourceAspect = glGetUniformLocation(skyShader.program(), "source_aspect");
-        skyModeUniform = glGetUniformLocation(skyShader.program(), "mapping_mode");
-        skyYaw = glGetUniformLocation(skyShader.program(), "yaw");
+        skyParallaxUniform = glGetUniformLocation(skyShader.program(), "parallax");
         skyBrightness = glGetUniformLocation(skyShader.program(), "brightness");
         skyImage = glGetUniformLocation(skyShader.program(), "has_image");
         skySampler = glGetUniformLocation(skyShader.program(), "panorama");
@@ -1127,7 +1149,13 @@ void main() {
         detailOpacityUniform = glGetUniformLocation(shader.program(), "detail_opacity");
         selectedUniform = glGetUniformLocation(shader.program(), "selected_face");
         accentUniform = glGetUniformLocation(shader.program(), "accent");
-        constexpr float vertices[] = {-1, -1, 1, -1, -1, 1, 1, 1};
+        curveUniform = glGetUniformLocation(shader.program(), "curve_depth");
+        std::vector<float> vertices{-1, -1, 1, -1, -1, 1, 1, 1};
+        for (int strip = 0; strip < Cube::curveSegments; ++strip) {
+            const float left = -1.f + 2.f * strip / Cube::curveSegments;
+            const float right = -1.f + 2.f * (strip + 1) / Cube::curveSegments;
+            for (float value : {left,-1.f,right,-1.f,left,1.f, left,1.f,right,-1.f,right,1.f}) vertices.push_back(value);
+        }
         GLint oldVao, oldBuffer;
         glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
         glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldBuffer);
@@ -1135,7 +1163,7 @@ void main() {
         glGenBuffers(1, &vbo);
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
         glBindVertexArray(oldVao);
@@ -1207,7 +1235,7 @@ void main() {
                                             sky ? static_cast<int>(sky->m_size.x) : 0, sky ? static_cast<int>(sky->m_size.y) : 0, bool(sky),
                                             skyError.empty() ? "none" : skyError);
                      }});
-        return {"Omarchy Cube", "Workspace cube/prism with skydome", "Omarchy Cube contributors", "0.2.0"};
+        return {"Omarchy Cube", "Workspace cube/prism with parallax backgrounds and optional curved faces", "Omarchy Cube contributors", "0.3.0"};
     } catch (...) {
         cleanup();
         throw;

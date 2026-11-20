@@ -93,6 +93,16 @@ esac''',
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.module.read_text(), self.original + (ROOT / "shell/SettingsBridge.lua").read_text())
 
+    def test_upgrades_previous_v2_parser_and_keeps_legacy_settings(self):
+        old = (ROOT / 'shell/SettingsBridge.lua').read_text().lstrip('\n').replace('face_curvature = {-1, 1}, ', '', 1)
+        self.module.write_text(self.original + '\n' + old)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        updated = self.module.read_text()
+        self.assertEqual(updated.count('-- Omarchy Cube GUI bridge v2'), 1)
+        self.assertIn('face_curvature = {-1, 1}', updated)
+        self.assertIn(self.original, updated)
+
     def test_bridge_only_is_idempotent(self):
         for _ in range(2):
             result = self.install()

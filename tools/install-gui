@@ -75,7 +75,9 @@ for _, plugin in ipairs(hl.get_loaded_plugins()) do
   end
 end
 """
-for known in (legacy, replacement):
+# The prior v2 parser has the same safe data-only format but no curvature key.
+previous_v2 = replacement.replace("face_curvature = {-1, 1}, ", "", 1)
+for known in (legacy, previous_v2, replacement):
     if current.count(known) == 1 and current.count("-- Omarchy Cube GUI bridge v") == 1:
         current = current.replace(known, replacement, 1)
         break
@@ -115,6 +117,7 @@ fi
 mkdir -p "$destination/i18n"
 install -m644 "$root"/shell/{Cube.qml,PlainText.qml,ValueRow.qml,control.py,SettingsBridge.lua} "$destination/"
 install -m644 "$root/shell/i18n/en.json" "$destination/i18n/"
+cp -a -- "$root/shell/assets" "$destination/"
 python3 - "$root/manifest.json" "$destination/manifest.json" <<'PYMANIFEST'
 import json, sys
 from pathlib import Path

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "omarchycube.controls",
   "name": "Omarchy Cube",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Omarchy Cube contributors",
   "license": "BSD-3-Clause",
-  "description": "3D workspace cube controls with skydomes and optional window dragging. Requires the matching native Hyprland plugin.",
+  "description": "3D workspace cube with parallax backgrounds, selected-face glow, built-in looks and experimental curved faces. Includes guided setup for the matching native Hyprland plugin.",
   "kinds": [
     "bar-widget"
   ],

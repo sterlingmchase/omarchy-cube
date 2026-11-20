@@ -5,7 +5,7 @@ do
     local header = "-- Omarchy Cube GUI settings v1\nreturn {\n"
     assert(data:sub(1, #header) == header and data:sub(-2) == "}\n", "Unrecognized cube-gui.lua")
     local ranges = {
-      duration_ms = {120, 600}, workspace_count = {4, 20}, zoom = {0, 1.5},
+      face_curvature = {-1, 1}, duration_ms = {120, 600}, workspace_count = {4, 20}, zoom = {0, 1.5},
       horizontal_sensitivity = {.25, 3}, vertical_sensitivity = {.25, 3}, skydome_brightness = {.1, 1},
     }
     local bools = {

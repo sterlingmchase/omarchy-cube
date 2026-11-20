@@ -17,15 +17,27 @@ Panel {
   property bool dirty: false
   property string messageKey: "read"
   property string errorMessage: ""
-  readonly property bool busy: bridge.running || picker.running || presetBridge.running
+  readonly property bool busy: bridge.running || picker.running || presetBridge.running || builtinCatalog.running
   property bool namesOpen: false
-  property bool presetsOpen: false
+  property string settingsPage: "cube"
+  onSettingsPageChanged: {
+    viewport.contentY = 0
+    if (settingsPage === "presets" && ready && !busy) {
+      preset("list")
+      builtinCatalog.running = true
+    }
+  }
   property var presetNames: []
+  property var builtinPresets: []
+  property string builtinSelection: ""
   property string presetAction: "list"
   property bool preserveOnOpen: false
   readonly property string helper: decodeURIComponent(Qt.resolvedUrl("control.py").toString().replace(/^file:\/\//, ""))
   property string operation: "read"
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+  component SettingToggle: Toggle {
+    implicitHeight: Style.space(40)
+  }
 
   function imageUrl(path) {
     // Encode every path segment: punctuation must never become a URL query or fragment.
@@ -34,6 +46,7 @@ Panel {
   }
 
   function change(key, value) {
+    builtinSelection = ""
     let next = Object.assign({}, values)
     next[key] = value
     values = next
@@ -59,12 +72,13 @@ Panel {
     bridge.command = ["python3", helper, "navigate", action]
     bridge.running = true
   }
-  function preset(action) {
+  function preset(action, builtinId) {
     if (busy) return
     presetAction = action
     errorMessage = ""
     let command = ["python3", helper, "presets", action]
-    if (action !== "list") command.push(presetName.text)
+    if (action === "builtin") command.push(builtinId)
+    else if (action !== "list") command.push(presetName.text)
     if (action === "save") command.push(JSON.stringify(values))
     presetBridge.command = command
     presetBridge.running = true
@@ -81,17 +95,36 @@ Panel {
           let result = JSON.parse(text)
           if (!result.ok) root.errorMessage = String(result.error).slice(0, 2048)
           else {
-            root.presetNames = result.presets
-            if (root.presetAction === "load") {
+            if (result.presets !== undefined) root.presetNames = result.presets
+            if (root.presetAction === "load" || root.presetAction === "builtin") {
+              root.builtinSelection = root.presetAction === "builtin" ? presetBridge.command[4] : ""
               root.values = Object.assign({}, root.values, result.values)
               root.dirty = true
-              root.messageKey = "presetLoaded"
+              root.messageKey = root.presetAction === "builtin" ? "builtinLoaded" : "presetLoaded"
             } else if (root.presetAction === "save") root.messageKey = "presetSaved"
             else if (root.presetAction === "delete") root.messageKey = "presetDeleted"
           }
         } catch (error) { root.messageKey = "responseError" }
       }
     }
+  }
+  Process {
+    id: builtinCatalog
+    command: ["python3", root.helper, "presets", "builtins"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          let result = JSON.parse(text)
+          if (result.ok) root.builtinPresets = result.builtins
+          else root.errorMessage = String(result.error).slice(0, 2048)
+        } catch (error) { root.messageKey = "responseError" }
+      }
+    }
+  }
+  Process {
+    id: setupLauncher
+    command: ["omarchy-launch-terminal", "python3",
+      decodeURIComponent(Qt.resolvedUrl("../tools/setup").toString().replace(/^file:\/\//, ""))]
   }
   Process {
     id: picker
@@ -161,11 +194,35 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: viewport
-    contentWidth: popup.fittedContentWidth(Style.space(420))
-    contentHeight: popup.fittedContentHeight(column.implicitHeight + footer.implicitHeight + Style.space(12), Style.space(570))
+    contentWidth: popup.fittedContentWidth(Style.space(520))
+    contentHeight: popup.fittedContentHeight(header.implicitHeight + column.implicitHeight + footer.implicitHeight + Style.space(24), Style.space(500))
+    Column {
+      id: header
+      anchors { top: parent.top; left: parent.left; right: parent.right }
+      spacing: Style.space(10)
+      PlainText { text: strings.t("title"); font.pixelSize: Style.font.display; font.bold: true }
+      PlainText { width: parent.width; text: strings.t(root.ready ? "description_" + root.settingsPage : "about"); wrapMode: Text.WordWrap }
+      Row {
+        width: parent.width
+        spacing: Style.space(6)
+        visible: root.ready
+        Repeater {
+          model: ["cube", "controls", "background", "presets"]
+          Button {
+            required property string modelData
+            width: (parent.width - Style.space(18)) / 4
+            text: strings.t("tab_" + modelData)
+            selected: root.settingsPage === modelData
+            bordered: true; focusable: true
+            Accessible.name: text
+            onClicked: root.settingsPage = modelData
+          }
+        }
+      }
+    }
     Flickable {
       id: viewport
-      anchors { top: parent.top; left: parent.left; right: parent.right; bottom: footer.top; bottomMargin: Style.space(12) }
+      anchors { top: header.bottom; topMargin: Style.space(12); left: parent.left; right: parent.right; bottom: footer.top; bottomMargin: Style.space(12) }
       clip: true
       contentHeight: column.implicitHeight
       boundsBehavior: Flickable.StopAtBounds
@@ -174,13 +231,15 @@ Panel {
         id: column
         width: parent.width
         spacing: Style.space(12)
-        PlainText { text: strings.t("title"); font.pixelSize: Style.font.display; font.bold: true }
-        PlainText { width: parent.width; text: strings.t("about"); wrapMode: Text.WordWrap }
         Column {
           width: parent.width
           spacing: Style.space(12)
           visible: root.ready
           enabled: !root.busy
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+            visible: root.settingsPage === "cube"
           Row {
             width: parent.width
             spacing: Style.space(6)
@@ -203,9 +262,8 @@ Panel {
               onClicked: root.navigate("right")
             }
           }
-          PlainText { width: parent.width; text: strings.t("mouseHelp"); wrapMode: Text.WordWrap }
           PlainText { text: strings.t("appearance"); font.bold: true }
-          Toggle {
+          SettingToggle {
             width: parent.width
             label: strings.t("enabled")
             checked: root.values.enabled === true
@@ -213,7 +271,7 @@ Panel {
           }
           Repeater {
             model: ["show_labels", "highlight_selected"]
-            Toggle {
+            SettingToggle {
               required property string modelData
               width: parent.width
               label: strings.t(modelData)
@@ -225,7 +283,8 @@ Panel {
             model: [
               {key: "duration_ms", title: "duration", min: 120, max: 600, step: 10, decimals: 0, unit: " ms"},
               {key: "zoom", title: "zoom", min: 0, max: 1.5, step: .05, decimals: 2, unit: ""},
-              {key: "workspace_count", title: "workspaces", min: 4, max: 20, step: 1, decimals: 0, unit: ""}
+              {key: "workspace_count", title: "workspaces", min: 4, max: 20, step: 1, decimals: 0, unit: ""},
+              {key: "face_curvature", title: "curvature", min: -1, max: 1, step: .05, decimals: 2, unit: ""}
             ]
             ValueRow {
               required property var modelData
@@ -237,6 +296,7 @@ Panel {
               onEdited: function(number) { root.change(modelData.key, Number(number.toFixed(4))) }
             }
           }
+          PlainText { width: parent.width; text: strings.t("curvatureHelp"); wrapMode: Text.WordWrap }
           PlainText { width: parent.width; text: strings.t("workspaceHelp"); wrapMode: Text.WordWrap }
           Button {
             width: parent.width
@@ -268,15 +328,21 @@ Panel {
               }
             }
           }
+          }
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+            visible: root.settingsPage === "controls"
           PlainText { text: strings.t("dragControls"); font.bold: true }
-          Toggle {
+          PlainText { width: parent.width; text: strings.t("mouseHelp"); wrapMode: Text.WordWrap }
+          SettingToggle {
             width: parent.width
             label: strings.t("trackpad_enabled")
             checked: root.values.trackpad_enabled === true
             onClicked: root.change("trackpad_enabled", !root.values.trackpad_enabled)
           }
           PlainText { width: parent.width; text: strings.t("trackpadHelp"); wrapMode: Text.WordWrap }
-          Toggle {
+          SettingToggle {
             width: parent.width
             label: strings.t("carry_windows")
             checked: root.values.carry_windows === true
@@ -300,7 +366,7 @@ Panel {
           }
           Repeater {
             model: ["invert_horizontal", "invert_vertical", "momentum"]
-            Toggle {
+            SettingToggle {
               required property string modelData
               width: parent.width
               label: strings.t(modelData)
@@ -309,8 +375,13 @@ Panel {
             }
           }
           PlainText { width: parent.width; text: strings.t("momentumHelp"); wrapMode: Text.WordWrap }
+          }
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+            visible: root.settingsPage === "background"
           PlainText { text: strings.t("background"); font.bold: true }
-          Toggle {
+          SettingToggle {
             width: parent.width
             label: strings.t("sky")
             checked: root.values.skydome_enabled === true
@@ -333,21 +404,7 @@ Panel {
             onTextEdited: root.change("skydome_path", text)
           }
           PlainText { width: parent.width; text: strings.t("imageHelp"); wrapMode: Text.WordWrap }
-          Row {
-            width: parent.width
-            spacing: Style.space(6)
-            Repeater {
-              model: ["auto", "photo", "panorama"]
-              Button {
-                required property string modelData
-                width: (parent.width - Style.space(12)) / 3
-                text: strings.t(modelData)
-                selected: root.values.skydome_mode === modelData
-                bordered: true; focusable: true
-                onClicked: root.change("skydome_mode", modelData)
-              }
-            }
-          }
+          PlainText { width: parent.width; text: strings.t("parallaxHelp"); wrapMode: Text.WordWrap }
           Image {
             id: preview
             width: parent.width
@@ -372,20 +429,52 @@ Panel {
             bordered: true; focusable: true
             onClicked: { root.close(); picker.running = true }
           }
-          Button {
-            width: parent.width
-            text: strings.t("presets")
-            selected: root.presetsOpen
-            bordered: true; focusable: true
-            onClicked: {
-              root.presetsOpen = !root.presetsOpen
-              if (root.presetsOpen) root.preset("list")
-            }
           }
           Column {
             width: parent.width
-            spacing: Style.space(8)
-            visible: root.presetsOpen
+            spacing: Style.space(10)
+            visible: root.settingsPage === "presets"
+            PlainText { text: strings.t("builtinPresets"); font.bold: true }
+            PlainText { width: parent.width; text: strings.t("builtinHelp"); wrapMode: Text.WordWrap }
+            Grid {
+              width: parent.width
+              columns: width >= Style.space(420) ? 2 : 1
+              spacing: Style.space(12)
+              Repeater {
+                model: root.builtinPresets
+                Column {
+                  required property var modelData
+                  width: (parent.width - (parent.columns - 1) * parent.spacing) / parent.columns
+                  spacing: Style.space(6)
+                  Image {
+                    width: parent.width
+                    height: width / 2
+                    source: root.imageUrl(parent.modelData.preview)
+                    sourceSize.width: 480
+                    sourceSize.height: 240
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                  }
+                  Button {
+                    width: parent.width
+                    text: strings.t("builtin_" + parent.modelData.id)
+                    selected: root.builtinSelection === parent.modelData.id
+                    bordered: true; focusable: true
+                    onClicked: root.preset("builtin", parent.modelData.id)
+                  }
+                  PlainText {
+                    width: parent.width
+                    text: strings.tn("builtinWorkspaces", parent.modelData.workspace_count).arg(Commons.I18n.formatNumber(parent.modelData.workspace_count))
+                  }
+                  PlainText {
+                    width: parent.width
+                    text: strings.t("builtinDescription_" + parent.modelData.id)
+                    wrapMode: Text.WordWrap
+                  }
+                }
+              }
+            }
+            PlainText { text: strings.t("myPresets"); font.bold: true; topPadding: Style.space(8) }
             PlainText { width: parent.width; text: strings.t("presetsHelp"); wrapMode: Text.WordWrap }
             Dropdown {
               width: parent.width
@@ -424,14 +513,25 @@ Panel {
       id: footer
       anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
       spacing: Style.space(8)
-      Button {
+      Row {
         width: parent.width
-        visible: root.ready
-        text: strings.t(root.busy ? "applying" : "apply")
-        selected: root.dirty
-        bordered: true; focusable: true
-        enabled: root.dirty && !root.busy
-        onClicked: root.run("apply")
+        spacing: Style.space(8)
+        Button {
+          width: root.ready ? (parent.width - Style.space(8)) * 0.65 : 0
+          visible: root.ready
+          text: strings.t(root.busy ? "applying" : "apply")
+          selected: root.dirty
+          bordered: true; focusable: true
+          enabled: root.dirty && !root.busy
+          onClicked: root.run("apply")
+        }
+        Button {
+          width: root.ready ? (parent.width - Style.space(8)) * 0.35 : parent.width
+          text: strings.t("refresh")
+          bordered: true; focusable: true
+          enabled: !root.busy && !root.dirty
+          onClicked: root.run("read")
+        }
       }
       PlainText {
         width: parent.width
@@ -442,10 +542,11 @@ Panel {
       }
       Button {
         width: parent.width
-        text: strings.t("refresh")
+        visible: !root.ready
+        text: strings.t("setup")
         bordered: true; focusable: true
-        enabled: !root.busy
-        onClicked: root.run("read")
+        enabled: !root.busy && !setupLauncher.running
+        onClicked: { setupLauncher.running = true; root.close() }
       }
     }
   }

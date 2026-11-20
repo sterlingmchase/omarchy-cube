@@ -16,6 +16,7 @@ for _, plugin in ipairs(hl.get_loaded_plugins()) do
       enabled = true,
       duration_ms = 280,
       zoom = 0.7,
+      face_curvature = 0.0, -- Experimental: -1 concave, 0 flat, +1 convex.
       workspace_count = 10,
       show_labels = true,
       trackpad_enabled = true,
@@ -30,7 +31,7 @@ for _, plugin in ipairs(hl.get_loaded_plugins()) do
       skydome_enabled = true,
       skydome_path = "", -- absolute PNG or JPEG panorama path; empty uses the generated sky
       skydome_brightness = 0.65,
-      skydome_mode = "auto", -- auto, photo or panorama
+      skydome_mode = "photo", -- Legacy key retained for compatibility; uses a parallax backdrop.
     } } })
   end
 end

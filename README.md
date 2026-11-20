@@ -1,7 +1,8 @@
 # Omarchy Cube
 
-Native workspace cube/prism for Omarchy, with a replaceable skydome and an optional
-settings panel. **Ten workspaces by default.** Four faces give the classic cube;
+Native workspace cube/prism for Omarchy, with parallax backgrounds, theme-colored
+edge glow, built-in looks, and optional curved faces. Includes a tabbed settings panel
+and guided first-run native setup. **Ten workspaces by default.** Four faces give the classic cube;
 5–20 form a rotating prism with one face per workspace. Zoom-out automatically
 scales with the shape so the extra faces stay in view.
 
@@ -9,6 +10,27 @@ Experimental, built for Hyprland **0.56.2**, commit
 `efb50993780079460b0cbed1363e2166a2de1d9f`. Other builds are rejected before hooks
 are installed. This is a compositor plugin; the optional settings widget uses
 Omarchy's shell.
+
+## In action
+
+![Omarchy Cube rotating with theme-colored edge glow and a parallax background](preview.png)
+
+Actual native rendering with generated demo terminal content, not a mockup or a
+capture of personal windows. The background is supplied generated artwork.
+
+<details>
+<summary>Experimental curved faces and the tabbed preset panel</summary>
+
+![Optional convex face curvature with the existing selected-edge glow](docs/screenshots/curvature.png)
+
+![Tabbed settings panel with built-in presets](docs/screenshots/presets.png)
+
+</details>
+
+Screenshots are real captures. Native scenes are rendered at 4K in a disposable
+headless compositor, cropped slightly to omit its startup warning, and delivered
+at 1920×1080. The panel image is cropped tightly to omit unrelated windows. See
+[preview capture notes](docs/screenshots/README.md).
 
 ## Build and test
 
@@ -21,6 +43,8 @@ make -j2
 make test
 python3 tests/settings.py
 python3 tests/install-gui.py
+python3 tests/setup.py
+python3 tests/presets.py
 omarchy plugin validate "$PWD"
 # In a sandbox using ptrace, disable only LeakSanitizer:
 ASAN_OPTIONS=detect_leaks=0 make test
@@ -36,6 +60,7 @@ python3 tests/integration.py
 python3 tests/integration.py --highres --no-capture
 python3 tests/gestures.py --display wayland-N --screenshot
 python3 tests/window-carry.py --display wayland-N
+python3 tests/curvature.py --display wayland-N
 ```
 
 The test checks the compositor's command line and refuses a personal session. It
@@ -45,6 +70,34 @@ Close the nested compositor afterward. Use `--no-capture` for frame-pacing tests
 screenshot readback can itself stall rendering.
 
 ## Marketplace installation
+
+Install and enable the widget normally:
+
+```sh
+omarchy plugin add https://github.com/sterlingmchase/omarchy-cube.git --enable
+```
+
+Click the cube icon, then **Set up native Cube…**. A terminal explains the changes
+and asks for confirmation. Save your work first: this loads native code inside
+Hyprland. Setup checks the exact supported compositor commit, installs missing
+Arch build dependencies with your approval, builds locally, backs up
+`hyprland.lua`, and installs the module and GUI settings bridge. Return to the
+widget and click **Refresh** when it finishes. No copy/paste configuration is
+required for a fresh, standard Omarchy installation.
+
+Setup refuses unsupported compositor versions and existing native installations
+rather than overwriting settings or replacing a running library. Package installs
+are not rolled back, but failed activation restores the original configuration.
+You can also run `python3 tools/setup` from the checkout, or use `--check` for a
+read-only compatibility check. Updates still follow the procedure below.
+
+The marketplace's **Manual setup** classification is external catalog metadata;
+it must be reviewed/updated there after this setup flow ships. This repository
+cannot clear that marketplace gate by changing its manifest, and Omarchy's current
+plugin installer has no native build/install lifecycle hook. The explicit first-run
+confirmation is intentional, not silent execution when the widget is imported.
+
+### Advanced/manual installation
 
 The marketplace installs the **settings widget source**, not the native compositor
 library. Enabling the widget alone cannot activate the cube. Build locally against
@@ -91,8 +144,12 @@ workspace textures in GPU memory, reads the chosen local image, and handles inpu
 while its overview is open. Optional Shift-drag moves windows only on release.
 The widget invokes local `hyprctl` commands and writes its own `cube-gui.lua`
 settings with backups; the setup script modifies `cube.lua` only when explicitly
-run. No telemetry, network requests or runtime downloads are implemented. No user
-images or desktop screenshots are bundled.
+run. No telemetry, network requests or runtime downloads are implemented. No personal
+window captures are bundled. Three maintainer-supplied generated illustrations and
+four previews are included by request. These images remain at their native
+1774×887 resolution and use a lightweight parallax backdrop, not spherical mapping.
+The code license does not automatically relicense artwork; see
+`shell/assets/skydomes/README.md` for provenance and distribution notes.
 
 ## Install locally
 
@@ -168,7 +225,8 @@ override the example's defaults.
 | `trackpad_enabled` | `true` | Enable four-finger cube swipes |
 | `workspace_name_1` … `workspace_name_20` | empty | Cube display names, up to 80 characters |
 | `show_labels` | `true` | Workspace names or numbers on faces |
-| `highlight_selected` | `true` | Outline the selected face |
+| `highlight_selected` | `true` | Theme-colored selected-face edge glow |
+| `face_curvature` | `0.0` | Experimental horizontal bow: −1 concave, 0 flat, +1 convex |
 | `horizontal_sensitivity` | `1.0` | Horizontal drag multiplier, 0.25–3 |
 | `vertical_sensitivity` | `1.0` | Vertical drag multiplier, 0.25–3 |
 | `invert_horizontal` | `false` | Reverse horizontal drag |
@@ -177,16 +235,38 @@ override the example's defaults.
 | `skydome_enabled` | `true` | Show backdrop |
 | `skydome_path` | empty | Absolute PNG or JPEG path; empty uses generated sky |
 | `skydome_brightness` | `0.65` | 0.1–1 |
-| `skydome_mode` | `auto` | `auto`, `photo` or `panorama` mapping |
+| `skydome_mode` | `photo` | Legacy compatibility key; all values now use the backdrop |
 
-For the skydome, a **2:1 equirectangular PNG or JPEG panorama** gives the best mapping.
-In **Auto**, images with an aspect ratio from 1.9:1 to 2.1:1 use spherical panorama mapping.
-Other photos fill the screen without distortion, with slight cropping and subtle
-sideways movement during rotation. Choose **Photo** or **Panorama** to override
-automatic mapping. The panel previews the selected local image before Apply.
-This avoids magnifying a narrow crop of a normal photo. It is decoded/uploaded on settings
-changes, never per frame or per turn. Replacing the same file and reloading picks
-up its changed modification time.
+Background images use aspect-correct cover framing with 10% overscan. Bounded
+horizontal/vertical parallax follows rotation/tilt in the opposite direction,
+without exposing borders. Turning animations off also disables parallax, including
+manual tilt. No true spherical mapping, 8K assets or extra texture layers are
+required; ordinary detailed images around 2K are suitable. Tall/ultrawide displays
+crop rather than stretch. Legacy `auto`, `photo` and `panorama` settings remain
+accepted so existing settings and presets still load, but all use this backdrop.
+
+The selected face has a sharp theme-colored edge with a soft inward glow, controlled
+by the existing highlight toggle. It uses the existing face shader: no blur pass,
+extra framebuffer, extra face capture or pulsing/idle animation. The glow fades
+out before the workspace center so text stays readable.
+
+**Experimental face curvature** is opt-in in the Cube tab. Negative values bow
+inward, positive values bow outward; zero uses the original flat quad. This is a
+gentle horizontal curve, not a sphere. Twenty-four mesh strips reuse each face's
+existing texture, with selection/window hit testing against the same strip planes.
+The bend fades back to flat while landing, and scales down on prisms with many
+faces to avoid wall intersections. Old GUI settings still load; old custom presets
+without curvature leave your current curvature unchanged. New custom saves include it.
+Upgrade the native library and run `tools/install-gui --bridge-only` to upgrade an
+existing data-only GUI bridge before applying the new setting.
+
+Curved faces disable the flat-only background-occlusion shortcut and add an
+interior mesh pass, but no additional per-strip workspace captures or image layers.
+Flat remains the lightweight default. Assess the opt-in prototype on your hardware;
+this is not a promise of sphere rendering or distortion-free text at strong bends.
+
+Images are decoded/uploaded on settings changes, never per frame or per turn.
+Replacing the same file and reloading picks up its changed modification time.
 
 Images must be regular files under 32 MiB. PNGs are limited to 8192 pixels
 per side and 16 megapixels. JPEG sources may be up to 16384 pixels per side
@@ -195,11 +275,25 @@ textures within the same 8192-pixel/16-megapixel limits without modifying origin
 the status command reports the error, and the GUI rejects/rolls back a failed image
 change. PNG and JPEG are supported image formats.
 
-Expand **Saved appearance presets** to save a named combination of the pending background,
-zoom, animation, labels, sensitivity and inversion settings. Select a saved preset
-and Load, then Apply to activate it. Save replaces the same-named preset; Delete
-removes it. Presets preserve workspace counts, names and enable switches. They store
-image paths, not copies of images, in `~/.config/hypr/cube-presets.json`.
+Open the **Presets** tab for four offline built-ins: **Classic Cube**, **Orbital**,
+**Deep Space**, and **Golden Hour**. Each card shows its workspace count and an
+scene preview. Selecting one stages its appearance and workspace count;
+only **Apply** changes the desktop. Workspace names, enable switches and input
+preferences are preserved. Classic clears the image path and uses the native sky.
+Built-ins cannot be overwritten or deleted. See [PRESETS.md](PRESETS.md) for details.
+
+Under **My presets**, save a named combination of the pending background, zoom,
+animation, labels, sensitivity and inversion settings. Select a saved preset and
+Load, then Apply to activate it. Save replaces the same-named custom preset; Delete
+removes it. Custom presets retain the existing behavior of preserving workspace
+counts, names and enable switches. They store image references, not copies of user
+images, in `~/.config/hypr/cube-presets.json`. Bundled images use stable built-in IDs
+so custom copies still work if the widget is relocated; external images retain
+absolute local paths. No network access or runtime Pillow/NumPy dependency is needed.
+Artwork can be reproduced from verified originals with
+`python3 tools/generate-skydomes.py --source-dir /path/to/originals` (development
+only; requires Pillow). Source filenames and SHA-256 checksums are recorded in
+`shell/assets/skydomes/sources.json`; provenance is in the adjacent README.
 
 ## Performance and behavior
 

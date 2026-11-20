@@ -10,18 +10,26 @@ import sys
 import tempfile
 import unicodedata
 
-DEFAULTS = dict(enabled=True, trackpad_enabled=True, carry_windows=False, duration_ms=280, zoom=.7, workspace_count=10,
+DEFAULTS = dict(enabled=True, trackpad_enabled=True, carry_windows=False, duration_ms=280, zoom=.7, workspace_count=10, face_curvature=0.0,
                 show_labels=True, highlight_selected=True,
                 horizontal_sensitivity=1.0, vertical_sensitivity=1.0,
                 invert_horizontal=False, invert_vertical=False, momentum=False,
                 skydome_enabled=True, skydome_path="", skydome_brightness=.65,
-                skydome_mode="auto")
+                skydome_mode="photo")
 NAMES = {"workspace_name_" + str(i) for i in range(1, 21)}
 DEFAULTS.update(("workspace_name_" + str(i), "") for i in range(1, 21))
 PRESET_KEYS = set(DEFAULTS) - NAMES - {"enabled", "trackpad_enabled", "carry_windows", "workspace_count"}
+SKY_ASSETS = Path(__file__).resolve().parent / "assets/skydomes"
+# Presentation only: built-ins deliberately omit names and all input preferences.
+BUILTINS = {
+    "classic": dict(workspace_count=4, duration_ms=240, zoom=.70, skydome_brightness=.65),
+    "orbital": dict(workspace_count=6, duration_ms=300, zoom=.85, skydome_brightness=.75),
+    "deep-space": dict(workspace_count=8, duration_ms=340, zoom=1.0, skydome_brightness=.60),
+    "golden-hour": dict(workspace_count=4, duration_ms=320, zoom=.75, skydome_brightness=.75),
+}
 PRESET_LIMIT = 32
 PRESET_BYTES = 262144
-RANGES = dict(duration_ms=(120, 600), zoom=(0, 1.5), workspace_count=(4, 20),
+RANGES = dict(duration_ms=(120, 600), zoom=(0, 1.5), workspace_count=(4, 20), face_curvature=(-1, 1),
               horizontal_sensitivity=(.25, 3), vertical_sensitivity=(.25, 3),
               skydome_brightness=(.1, 1))
 BOOLS = {"enabled", "trackpad_enabled", "carry_windows", "skydome_enabled", "show_labels", "highlight_selected",
@@ -72,6 +80,38 @@ def validate_name(name, limit=64, empty=False):
     return name
 
 
+def bundled_image(name):
+    if name not in BUILTINS or name == "classic":
+        raise ValueError("Unknown bundled skydome")
+    path = SKY_ASSETS / (name + ".jpg")
+    if not path.is_file():
+        raise ValueError("Bundled skydome is missing; reinstall or update the widget")
+    return str(path)
+
+
+def builtin_presets(name=None):
+    if name is None:
+        return dict(builtins=[dict(id=key, workspace_count=settings["workspace_count"],
+                                  preview=str(SKY_ASSETS / (key + "-preview.jpg")))
+                              for key, settings in BUILTINS.items()])
+    if name not in BUILTINS:
+        raise ValueError("Unknown built-in preset")
+    values = dict(BUILTINS[name], show_labels=True, highlight_selected=True,
+                  skydome_enabled=True, skydome_mode="photo",
+                  skydome_path="" if name == "classic" else bundled_image(name))
+    validate(dict(DEFAULTS, **values))
+    return dict(values=values)
+
+
+def resolve_preset(settings):
+    values = dict(settings)
+    image = values.get("skydome_path")
+    if isinstance(image, str) and image.startswith("builtin:"):
+        values["skydome_path"] = bundled_image(image.removeprefix("builtin:"))
+    validate(dict(DEFAULTS, **values))
+    return values
+
+
 def presets(action, name=None, values=None):
     if action not in ("list", "save", "load", "delete"):
         raise ValueError("Unknown preset action")
@@ -95,19 +135,23 @@ def presets(action, name=None, values=None):
                     raise ValueError("Invalid preset collection")
                 for label, settings in saved.items():
                     validate_name(label)
-                    if not isinstance(settings, dict) or set(settings) != PRESET_KEYS:
+                    if not isinstance(settings, dict) or set(settings) not in (PRESET_KEYS, PRESET_KEYS - {"face_curvature"}):
                         raise ValueError("Invalid preset settings")
-                    validate(dict(DEFAULTS, **settings))
+                    resolve_preset(settings)
             except (ValueError, TypeError) as error:
                 raise ValueError("Invalid preset file; existing file was preserved: " + str(error)) from error
         if action == "load":
             if name not in saved:
                 raise ValueError("Preset does not exist")
-            return dict(presets=sorted(saved), values=saved[name])
+            return dict(presets=sorted(saved), values=resolve_preset(saved[name]))
         if action == "save":
             if name not in saved and len(saved) >= PRESET_LIMIT:
                 raise ValueError("At most %d presets can be saved" % PRESET_LIMIT)
             saved[name] = {key: values[key] for key in DEFAULTS if key in PRESET_KEYS}
+            for builtin in BUILTINS:
+                if builtin != "classic" and values["skydome_path"] == str(SKY_ASSETS / (builtin + ".jpg")):
+                    saved[name]["skydome_path"] = "builtin:" + builtin
+                    break
         elif action == "delete":
             if name not in saved:
                 raise ValueError("Preset does not exist")
@@ -255,13 +299,16 @@ def main():
     try:
         if len(sys.argv) >= 3 and sys.argv[1] == "presets":
             action = sys.argv[2]
-            expected = {"list": 3, "load": 4, "delete": 4, "save": 5}
+            expected = {"list": 3, "load": 4, "delete": 4, "save": 5, "builtins": 3, "builtin": 4}
             if len(sys.argv) != expected.get(action):
-                raise ValueError("Usage: control.py presets list|load NAME|delete NAME|save NAME '<settings JSON>'")
+                raise ValueError("Usage: control.py presets list|builtins|builtin ID|load NAME|delete NAME|save NAME '<settings JSON>'")
             if action == "save" and len(sys.argv[4]) > 32768:
                 raise ValueError("Settings payload too large")
-            result = presets(action, sys.argv[3] if len(sys.argv) > 3 else None,
-                             json.loads(sys.argv[4]) if action == "save" else None)
+            if action in ("builtins", "builtin"):
+                result = builtin_presets(sys.argv[3] if action == "builtin" else None)
+            else:
+                result = presets(action, sys.argv[3] if len(sys.argv) > 3 else None,
+                                 json.loads(sys.argv[4]) if action == "save" else None)
             print(json.dumps(dict(ok=True, **result)))
             return
         if len(sys.argv) == 2 and sys.argv[1] == "pick":

@@ -38,6 +38,11 @@ if options.highres:
     for ws in (1, 2, 3, 4):
         ok('eval', f'hl.dispatch(hl.dsp.focus({{workspace={ws}}}))')
         ok('eval', f'hl.dispatch(hl.dsp.workspace.move({{workspace="{ws}",monitor="CUBE-test"}}))')
+    # On a headless backend, a default output can steal focus between timed
+    # assertions. Keep just the owned 4K output; retain a Wayland nested window.
+    for output in json.loads(ctl('monitors', '-j')):
+        if output['name'].startswith('HEADLESS') and output['name'] != 'CUBE-test':
+            ctl('output', 'remove', output['name'])
     ok('eval', 'hl.dispatch(hl.dsp.focus({monitor="CUBE-test"}))')
 children = []
 so = str(root / 'build/omarchy-cube.so')
@@ -65,7 +70,7 @@ try:
     assert 'overview=true' in ctl('omarchy-cube:status'), 'Focus setting closed overview'
     ok('eval', 'hl.config({plugin={cube={enabled=false}}})')
     assert 'active=false' in ctl('omarchy-cube:status'), 'Disabling cube did not cancel it'
-    ok('eval', 'hl.config({input={follow_mouse=1},plugin={cube={enabled=true,duration_ms=280}}})')
+    ok('eval', 'hl.config({input={follow_mouse=0},plugin={cube={enabled=true,duration_ms=280}}})')
     if options.highres:
         output = next(m for m in json.loads(ctl('monitors', '-j')) if m['focused'])
         assert output['name'] == 'CUBE-test' and output['width'] == 3840 and output['height'] == 2160, output
@@ -136,7 +141,7 @@ try:
             for expected, (x, y) in zip(colors, [(0.05, 0.05), (0.95, 0.05), (0.05, 0.95), (0.95, 0.95)]):
                 actual = rendered.getpixel((int(x * rendered.width), int(y * rendered.height)))
                 assert all(abs(a-b) < 10 for a, b in zip(actual, expected)), (actual, expected)
-        # Explicit panorama overrides Auto's photo choice; Photo restores the corners.
+        # Legacy mode values remain accepted, but all now use the aspect-correct backdrop.
         for mode in ('panorama', 'photo', 'auto'):
             ok('dispatch', 'omarchy-cube', 'cancel')
             ok('eval', 'hl.config({plugin={cube={skydome_mode="' + mode + '"}}})')
@@ -146,7 +151,28 @@ try:
             with Image.open(capture).convert('RGB') as rendered:
                 corner = rendered.getpixel((int(.05 * rendered.width), int(.05 * rendered.height)))
                 red_corner = corner[0] > 240 and corner[1] < 10 and corner[2] < 10
-                assert red_corner == (mode != 'panorama'), (mode, corner)
+                assert red_corner, (mode, corner)
+        # Both texture decoders and all mappings must keep north/top above south/bottom.
+        # A vertically uniform image cannot catch the panorama latitude inversion.
+        orientation = Image.new('RGB', (512, 256), (240, 100, 20))
+        orientation.paste((20, 160, 240), (0, 0, 512, 128))
+        for extension in ('png', 'jpg'):
+            fixture = root / ('build/sky-orientation.' + extension)
+            orientation.save(fixture)
+            for mapping in ('auto', 'panorama', 'photo'):
+                ok('dispatch', 'omarchy-cube', 'cancel')
+                ok('eval', 'hl.config({plugin={cube={skydome_path=' + json.dumps(str(fixture)) +
+                   ',skydome_mode="' + mapping + '",skydome_brightness=1,zoom=1.5}}})')
+                ok('dispatch', 'omarchy-cube', 'overview')
+                time.sleep(.4)
+                subprocess.run(['grim', '-o', output['name'], str(capture)], env=env, check=True, timeout=10)
+                with Image.open(capture).convert('RGB') as rendered:
+                    for x in (.03, .97):
+                        for y, expected in ((.08, (20, 160, 240)), (.92, (240, 100, 20))):
+                            actual = rendered.getpixel((int(x * rendered.width), int(y * rendered.height)))
+                            assert all(abs(a-b) < 12 for a, b in zip(actual, expected)), (extension, mapping, x, y, actual, expected)
+        ok('dispatch', 'omarchy-cube', 'cancel')
+        ok('eval', 'hl.config({plugin={cube={skydome_path=' + json.dumps(str(photo_path)) + ',skydome_mode="auto"}}})')
         # Compare each adornment independently on an empty face, with stable snapshots.
         ok('dispatch', 'omarchy-cube', 'cancel')
         ok('dispatch', 'workspace', '4')
@@ -164,6 +190,13 @@ try:
         for shot in shots[1:]:
             diff = ImageChops.difference(shots[0], shot)
             assert sum(n for n, rgb in diff.getcolors(diff.width * diff.height) if max(rgb) > 20) > 300, 'Adornment did not render'
+        glow_diff = ImageChops.difference(shots[0], shots[2])
+        run = longest = 0
+        for y in range(glow_diff.height):
+            run = run + 1 if max(glow_diff.getpixel((glow_diff.width // 2, y))) > 3 else 0
+            longest = max(longest, run)
+        assert longest >= 8, ('Selected edge has no soft halo beyond the crisp line', longest)
+        assert max(glow_diff.getpixel((glow_diff.width // 2, glow_diff.height // 2))) <= 2, 'Glow obscures workspace center'
         ok('dispatch', 'workspace', '1')
         ok('eval', 'hl.config({plugin={cube={show_labels=true,highlight_selected=true,zoom=0.7,skydome_brightness=0.65}}})')
     image.write_bytes(b'not a PNG image')

@@ -1,6 +1,49 @@
 #include "../src/cube.hpp"
 #include <cassert>
 int main() {
+    assert((Cube::backdropParallax(1, .5, false) == std::array<double, 2>{0, 0}));
+    assert((Cube::backdropParallax(std::numeric_limits<double>::infinity(), 0, true) == std::array<double, 2>{0, 0}));
+    assert(Cube::backdropParallax(.5, .2, true)[0] < 0);
+    assert(Cube::backdropParallax(.5, .2, true)[1] < 0);
+    for (double yaw = -40; yaw < 40; yaw += .13)
+        for (double pitch : {-10., -Cube::pi/4, 0., Cube::pi/4, 10.}) {
+            auto p = Cube::backdropParallax(yaw, pitch, true);
+            for (double value : p) assert(std::isfinite(value) && std::abs(value) <= .65);
+            for (double aspect : {.25, 9./16, 16./9, 32./9, 8.})
+                for (double source : {.25, 1., 2., 4.}) {
+                    std::array<double,2> span{std::min(1., aspect/source)/1.10, std::min(1., source/aspect)/1.10};
+                    for (int axis = 0; axis < 2; ++axis)
+                        for (double edge : {0., 1.}) {
+                            double uv = .5 + (edge-.5)*span[axis] + p[axis]*(1-span[axis])*.5;
+                            assert(uv > 0 && uv < 1); // no exposed borders, including ultrawide/portrait
+                        }
+                }
+        }
+    for (int count : {4, 5, 8, 12, 20})
+        for (double curvature : {-1., -.5, 0., .5, 1.})
+            for (double rotation : {-.2, 0., .2})
+                for (double pitch : {-Cube::pi/4, -.35, 0., .35, Cube::pi/4}) {
+                    const double r = Cube::radius(count), depth = Cube::curveDepth(count, curvature), distance = r + 3;
+                    for (double u : {.08, .25, .5, .75, .92})
+                        for (double v : {.1, .5, .9}) {
+                            const double lx = u*2-1, ly = v*2-1;
+                            const int strip = std::clamp(int(u*Cube::curveSegments), 0, Cube::curveSegments-1);
+                            const auto plane = Cube::curveStrip(strip, depth);
+                            assert(std::abs(plane[2]) < 1/r);
+                            const double wall = r + plane[2]*lx + plane[3];
+                            const double a = -rotation*2*Cube::pi/count, c = std::cos(a), s = std::sin(a);
+                            const double px = lx*c + wall*s, z = -lx*s + wall*c;
+                            const double py = ly*std::cos(pitch)-z*std::sin(pitch);
+                            const double pz = ly*std::sin(pitch)+z*std::cos(pitch);
+                            const double x = 2*px/(distance-pz), y = 2*py/(distance-pz);
+                            auto hit = Cube::hitFacePoint(count,rotation,distance,x,y,pitch,curvature);
+                            assert(hit && hit->face == 0);
+                            assert(std::abs(hit->u-u)<1e-7 && std::abs(hit->v-v)<1e-7);
+                        }
+                }
+    assert(Cube::curveDepth(4, 0) == 0);
+    assert(Cube::curveDepth(4, 100) == Cube::curveDepth(4, 1));
+    assert(Cube::curveDepth(4, std::numeric_limits<double>::quiet_NaN()) == 0);
     assert(Cube::releaseTarget(.7, 8, .01, false) == 1);
     assert(Cube::releaseTarget(.7, 8, .01, true) == 2);
     assert(Cube::releaseTarget(-.7, -8, .01, true) == -2);
