@@ -5,7 +5,7 @@ do
     local header = "-- Omarchy Cube GUI settings v1\nreturn {\n"
     assert(data:sub(1, #header) == header and data:sub(-2) == "}\n", "Unrecognized cube-gui.lua")
     local ranges = {
-      face_curvature = {-1, 1}, duration_ms = {120, 600}, workspace_count = {4, 20}, zoom = {0, 1.5},
+      face_curvature = {-1, 1}, duration_ms = {120, 600}, workspace_count = {4, 20}, trackpad_fingers = {3, 4}, zoom = {0, 1.5},
       horizontal_sensitivity = {.25, 3}, vertical_sensitivity = {.25, 3}, skydome_brightness = {.1, 1},
     }
     local bools = {
@@ -26,7 +26,7 @@ do
         local n = tonumber(raw)
         local range = ranges[key]
         assert(n and n >= range[1] and n <= range[2], "Invalid cube number")
-        if key == "workspace_count" or key == "duration_ms" then
+        if key == "workspace_count" or key == "duration_ms" or key == "trackpad_fingers" then
           n = assert(math.tointeger(n), "Invalid cube integer")
         end
         values[key] = n

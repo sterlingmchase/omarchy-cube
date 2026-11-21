@@ -41,7 +41,7 @@ CShader shader, skyShader;
 struct Settings {
     SP<Config::Values::CBoolValue> enabled, skyEnabled, trackpad, carryWindows;
     SP<Config::Values::CBoolValue> labels, highlight, invertHorizontal, invertVertical, momentum;
-    SP<Config::Values::CIntValue> duration, count;
+    SP<Config::Values::CIntValue> duration, count, trackpadFingers;
     SP<Config::Values::CFloatValue> zoom, brightness, curvature;
     SP<Config::Values::CFloatValue> horizontalSensitivity, verticalSensitivity;
     SP<Config::Values::CStringValue> path;
@@ -695,7 +695,7 @@ void keyboardEvent(CInputManager *manager, const IKeyboard::SKeyEvent &event, SP
 void installInput() {
     swipeBegin = Event::bus()->m_events.gesture.swipe.begin.listen([](IPointer::SSwipeBeginEvent e, Event::SCallbackInfo &info) {
         swipeOwned = swiping = false;
-        if (info.cancelled || e.fingers != 4 || !cfg.trackpad->value() || dragging || g_pSessionLockManager->isSessionLocked())
+        if (info.cancelled || e.fingers != static_cast<unsigned>(cfg.trackpadFingers->value()) || !cfg.trackpad->value() || dragging || g_pSessionLockManager->isSessionLocked())
             return;
         const bool opening = !overview;
         if (opening && !rotate("overview").success)
@@ -961,7 +961,9 @@ void configure() {
     using namespace Config::Values;
     cfg.enabled = option<CBoolValue>("plugin:cube:enabled", "Enable cube animation", true);
     cfg.carryWindows = option<CBoolValue>("plugin:cube:carry_windows", "Shift-drag windows between cube faces", false);
-    cfg.trackpad = option<CBoolValue>("plugin:cube:trackpad_enabled", "Four-finger cube swipe", true);
+    cfg.trackpad = option<CBoolValue>("plugin:cube:trackpad_enabled", "Enable cube swipes", true);
+    cfg.trackpadFingers = option<CIntValue>("plugin:cube:trackpad_fingers", "Fingers for cube swipes", 3,
+                                          SIntValueOptions{.min = 3, .max = 4});
     static const auto nameKeys = [] {
         std::array<std::string, 20> keys;
         for (size_t i = 0; i < keys.size(); ++i)

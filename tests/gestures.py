@@ -103,12 +103,12 @@ def main():
             emit("finish(false)", False)
             assert status()["active"] == "false" and workspace() == start
         config(dict(trackpad_enabled=True))
-        emit("begin(3)", False)
+        emit("begin(4)", False)
         emit("update(-300,0)", False)
         emit("finish(false)", False)
         assert status()["active"] == "false" and workspace() == start
 
-        emit("begin(4)")
+        emit("begin(3)")
         assert status()["overview"] == "true"
         time.sleep(.3)
         emit("update(-300,1000)")
@@ -127,9 +127,20 @@ def main():
         assert status()["active"] == "false" and workspace() == start % 4 + 1
         start = workspace()
 
+        config(dict(trackpad_fingers=4))
+        emit("begin(3)", False)
+        emit("update(-300,0)", False)
+        emit("finish(false)", False)
+        assert status()["active"] == "false" and workspace() == start
+        emit("begin(4)")
+        assert status()["overview"] == "true"
+        emit("finish(true)")
+        assert status()["active"] == "false" and workspace() == start
+        config(dict(trackpad_fingers=3))
+
         config(dict(horizontal_sensitivity=2, vertical_sensitivity=.5,
                     invert_horizontal=True, invert_vertical=True))
-        emit("begin(4)")
+        emit("begin(3)")
         time.sleep(.3)
         emit("update(-150,100)")
         tuned = status()
@@ -143,7 +154,7 @@ def main():
         config({f"workspace_name_{start % 4 + 1}": name})
         rotate("overview")
         time.sleep(.3)
-        emit("begin(4)")
+        emit("begin(3)")
         emit("update(-270,-1000)")
         assert math.isclose(float(status()["pitch"]), math.pi / 4, abs_tol=.001)
         emit("finish(false)")
@@ -166,7 +177,7 @@ def main():
         rotate("cancel")
 
         for action in ("cancel", "Escape"):
-            emit("begin(4)")
+            emit("begin(3)")
             emit("update(-300,0)")
             if action == "cancel":
                 rotate("cancel")
@@ -182,7 +193,7 @@ def main():
             emit("update(-300,0)", False)
             emit("finish(false)", False)
         # A new sequence must work after cancellation drained the old one.
-        emit("begin(4)")
+        emit("begin(3)")
         emit("update(-180,0)")
         emit("finish(false)")
         time.sleep(.3)

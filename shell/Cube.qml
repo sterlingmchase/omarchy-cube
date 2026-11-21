@@ -352,6 +352,23 @@ Panel {
             checked: root.values.trackpad_enabled === true
             onClicked: root.change("trackpad_enabled", !root.values.trackpad_enabled)
           }
+          Row {
+            width: parent.width
+            spacing: Style.space(6)
+            enabled: root.values.trackpad_enabled === true
+            Repeater {
+              model: [3, 4]
+              Button {
+                required property int modelData
+                width: (parent.width - Style.space(6)) / 2
+                text: strings.t(modelData === 3 ? "trackpadThree" : "trackpadFour")
+                selected: root.values.trackpad_fingers === modelData
+                bordered: true; focusable: true
+                Accessible.name: text
+                onClicked: root.change("trackpad_fingers", modelData)
+              }
+            }
+          }
           PlainText { width: parent.width; text: strings.t("trackpadHelp"); wrapMode: Text.WordWrap }
           SettingToggle {
             width: parent.width

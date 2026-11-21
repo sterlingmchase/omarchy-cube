@@ -205,7 +205,7 @@ reload, then enables the `local.cube` bar widget. Click its cube icon. Previous/
 - Entry eases out over 220 ms while rotation follows the drag immediately.
 - Drag vertically to tilt up/down by up to 45° and look through the open ends; shaded inner walls need no extra workspace snapshots. Release-to-select smoothly levels the cube.
 - When opened using the keyboard or panel, left-drag to rotate; releasing snaps to the nearest face and leaves mouse mode open.
-- Four-finger trackpad swipe opens and rotates the cube; release selects with an animated landing. A swipe inside an already-open overview leaves it open. Escape or a cancelled gesture cancels. Three-finger workspace gestures remain available. Disable cube swipes under Drag controls.
+- Choose a three- or four-finger swipe under Controls, or turn off Trackpad gestures. Swiping opens and rotates the cube. Release to select with an animated landing. A swipe inside an already-open overview leaves it open. Escape cancels. The cube takes over the selected finger count while Trackpad gestures are enabled.
 - Optional window moving: enable **Move windows with Shift-drag** under Drag controls. In mouse mode, hold Shift and drag a window inside a face; release to move it to the front workspace and land there. The destination outline and window title show where it will go. Escape/right-click cancels without moving it. Ordinary dragging still rotates. Pinned and grouped windows are excluded; destinations on another monitor are rejected. This option starts off and appearance presets preserve it.
 - Scroll to rotate through workspaces.
 - Click a face to select it with a smooth rotation-and-zoom landing.
@@ -233,7 +233,8 @@ override the example's defaults.
 | `zoom` | `0.7` | 0–1.5; scales with prism size |
 | `workspace_count` | `10` | Numbered workspaces 1–N, N=4–20 |
 | `carry_windows` | `false` | Enable Shift-drag window transfers within the cube |
-| `trackpad_enabled` | `true` | Enable four-finger cube swipes |
+| `trackpad_enabled` | `true` | Enable cube swipes |
+| `trackpad_fingers` | `3` | Use 3 or 4 fingers for cube swipes |
 | `workspace_name_1` … `workspace_name_20` | empty | Cube display names, up to 80 characters |
 | `show_labels` | `true` | Workspace names or numbers on faces |
 | `highlight_selected` | `true` | Theme-colored selected-face edge glow |

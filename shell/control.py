@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unicodedata
 
-DEFAULTS = dict(enabled=True, trackpad_enabled=True, carry_windows=False, duration_ms=280, zoom=.7, workspace_count=10, face_curvature=0.0,
+DEFAULTS = dict(enabled=True, trackpad_enabled=True, trackpad_fingers=3, carry_windows=False, duration_ms=280, zoom=.7, workspace_count=10, face_curvature=0.0,
                 show_labels=True, highlight_selected=True,
                 horizontal_sensitivity=1.0, vertical_sensitivity=1.0,
                 invert_horizontal=False, invert_vertical=False, momentum=False,
@@ -18,7 +18,7 @@ DEFAULTS = dict(enabled=True, trackpad_enabled=True, carry_windows=False, durati
                 skydome_mode="photo")
 NAMES = {"workspace_name_" + str(i) for i in range(1, 21)}
 DEFAULTS.update(("workspace_name_" + str(i), "") for i in range(1, 21))
-PRESET_KEYS = set(DEFAULTS) - NAMES - {"enabled", "trackpad_enabled", "carry_windows", "workspace_count"}
+PRESET_KEYS = set(DEFAULTS) - NAMES - {"enabled", "trackpad_enabled", "trackpad_fingers", "carry_windows", "workspace_count"}
 SKY_ASSETS = Path(__file__).resolve().parent / "assets/skydomes"
 # Presentation only: built-ins deliberately omit names and all input preferences.
 BUILTINS = {
@@ -29,12 +29,12 @@ BUILTINS = {
 }
 PRESET_LIMIT = 32
 PRESET_BYTES = 262144
-RANGES = dict(duration_ms=(120, 600), zoom=(0, 1.5), workspace_count=(4, 20), face_curvature=(-1, 1),
+RANGES = dict(trackpad_fingers=(3, 4), duration_ms=(120, 600), zoom=(0, 1.5), workspace_count=(4, 20), face_curvature=(-1, 1),
               horizontal_sensitivity=(.25, 3), vertical_sensitivity=(.25, 3),
               skydome_brightness=(.1, 1))
 BOOLS = {"enabled", "trackpad_enabled", "carry_windows", "skydome_enabled", "show_labels", "highlight_selected",
          "invert_horizontal", "invert_vertical", "momentum"}
-INTS = {"duration_ms", "workspace_count"}
+INTS = {"duration_ms", "workspace_count", "trackpad_fingers"}
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "hypr"
 TARGET = CONFIG / "cube-gui.lua"
 MARKER = "-- Omarchy Cube GUI settings v1\n"

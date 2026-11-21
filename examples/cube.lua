@@ -20,6 +20,7 @@ for _, plugin in ipairs(hl.get_loaded_plugins()) do
       workspace_count = 10,
       show_labels = true,
       trackpad_enabled = true,
+      trackpad_fingers = 3,
       carry_windows = false, -- Optional Shift-drag window transfers inside mouse mode.
       workspace_name_1 = "", -- Optional cube display name; likewise workspace_name_2 through _20.
       highlight_selected = true,

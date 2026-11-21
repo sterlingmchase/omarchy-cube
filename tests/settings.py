@@ -28,6 +28,16 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             control.validate(dict(control.DEFAULTS, trackpad_enabled=1))
 
+    def test_trackpad_finger_count(self):
+        self.assertEqual(control.DEFAULTS["trackpad_fingers"], 3)
+        for count in (3, 4):
+            values = dict(control.DEFAULTS, trackpad_fingers=count)
+            self.assertIn(f"trackpad_fingers = {count},", control.encode(control.validate(values)))
+        for invalid in (2, 5, 3.5, "4", True):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                control.validate(dict(control.DEFAULTS, trackpad_fingers=invalid))
+        self.assertNotIn("trackpad_fingers", control.PRESET_KEYS)
+
     def test_preset_lifecycle_preserves_workspace_settings(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(control, "CONFIG", Path(directory)), \
              patch.object(control, "ctl", side_effect=AssertionError("Presets must not call the compositor")):
