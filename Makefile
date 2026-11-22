@@ -7,7 +7,7 @@ LDLIBS += $(shell pkg-config --libs pixman-1 libdrm cairo libturbojpeg pangocair
 all: build/omarchy-cube.so
 build:
 	mkdir -p $@
-build/omarchy-cube.so: src/plugin.cpp src/cube.hpp src/sky.hpp src/sky-file.hpp src/label.hpp | build
+build/omarchy-cube.so: src/plugin.cpp src/arm64-hook.hpp src/cube.hpp src/sky.hpp src/sky-file.hpp src/label.hpp | build
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -shared $< $(LDLIBS) -o $@.new
 	mv $@.new $@
 build/test: tests/cube.cpp src/cube.hpp | build

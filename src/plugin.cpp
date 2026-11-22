@@ -1,6 +1,9 @@
 #include "cube.hpp"
 #include "sky.hpp"
 #include "label.hpp"
+#ifdef __aarch64__
+#include "arm64-hook.hpp"
+#endif
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <array>
 #include <chrono>
@@ -34,7 +37,16 @@ using namespace Render;
 using namespace Render::GL;
 namespace {
 HANDLE handle;
-CFunctionHook *hook = nullptr, *layerHook = nullptr, *keyboardHook = nullptr;
+#ifdef __aarch64__
+using HookT = cube_arm64::Hook;
+HookT *makeHook(void *target, void *destination) { return new HookT(target, destination); }
+void dropHook(HookT *h) { delete h; }
+#else
+using HookT = CFunctionHook;
+HookT *makeHook(void *target, void *destination) { return HyprlandAPI::createFunctionHook(handle, target, destination); }
+void dropHook(HookT *h) { HyprlandAPI::removeFunctionHook(handle, h); }
+#endif
+HookT *hook = nullptr, *layerHook = nullptr, *keyboardHook = nullptr;
 SP<IKeyboard> eventKeyboard;
 bool capturing = false;
 CShader shader, skyShader;
@@ -923,15 +935,15 @@ void cleanup() {
     // Queued pass objects must die while their plugin vtable is still loaded.
     g_pHyprRenderer->m_renderPass.removeAllOfType("OmarchyCube");
     if (hook) {
-        HyprlandAPI::removeFunctionHook(handle, hook);
+        dropHook(hook);
         hook = nullptr;
     }
     if (layerHook) {
-        HyprlandAPI::removeFunctionHook(handle, layerHook);
+        dropHook(layerHook);
         layerHook = nullptr;
     }
     if (keyboardHook) {
-        HyprlandAPI::removeFunctionHook(handle, keyboardHook);
+        dropHook(keyboardHook);
         keyboardHook = nullptr;
     }
     eventKeyboard.reset();
@@ -1175,7 +1187,7 @@ void main() {
                 continue;
             if (hook)
                 throw std::runtime_error("Ambiguous workspace renderer");
-            hook = HyprlandAPI::createFunctionHook(handle, f.address, reinterpret_cast<void *>(&renderWorkspace));
+            hook = makeHook(f.address, reinterpret_cast<void *>(&renderWorkspace));
         }
         if (!hook || !hook->hook())
             throw std::runtime_error("Workspace render hook unavailable");
@@ -1184,14 +1196,14 @@ void main() {
                 continue;
             if (layerHook)
                 throw std::runtime_error("Ambiguous layer renderer");
-            layerHook = HyprlandAPI::createFunctionHook(handle, f.address, reinterpret_cast<void *>(&renderLayer));
+            layerHook = makeHook(f.address, reinterpret_cast<void *>(&renderLayer));
         }
         if (!layerHook || !layerHook->hook())
             throw std::runtime_error("Layer render hook unavailable");
         for (const auto &f : HyprlandAPI::findFunctionsByName(handle, "onKeyboardKey")) {
             if (!f.demangled.starts_with("CInputManager::onKeyboardKey(")) continue;
             if (keyboardHook) throw std::runtime_error("Ambiguous keyboard handler");
-            keyboardHook = HyprlandAPI::createFunctionHook(handle, f.address, reinterpret_cast<void *>(&keyboardEvent));
+            keyboardHook = makeHook(f.address, reinterpret_cast<void *>(&keyboardEvent));
         }
         if (!keyboardHook || !keyboardHook->hook())
             throw std::runtime_error("Keyboard origin hook unavailable");
